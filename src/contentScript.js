@@ -1,32 +1,24 @@
-const STYLE_TAG_ID = "atq-deal-card-style";
+const STYLE_TAG_ID = "mytruck-anomaly-style";
 const CARD_SELECTOR = "[data-cmp='itemCard']";
-const CARD_LINK_SELECTOR = "a[data-cmp='link']";
 const CARD_TITLE_SELECTOR = "h2[data-cmp='subheading']";
-const CARD_CONDITION_SELECTOR = "[data-cmp='listingCondition']";
-const CARD_PRICE_SELECTOR =
-  "[data-cmp='pricing'] [data-cmp='firstPrice'], [data-cmp='firstPrice']";
+const CARD_LINK_SELECTOR = "a[data-cmp='link']";
 const CARD_SPECS_SELECTOR = "[data-cmp='listingSpecifications']";
 const CARD_MILES_SELECTOR =
   "[data-cmp='listingSpecifications'] li, [data-cmp='listingSpecifications'] span";
 const CONSIDER_NEW_BANNER_SELECTOR = ".text-blue-darker.text-bold";
-const BADGE_CLASS = "atq-deal-card-badge";
-const BADGE_LABEL_CLASS = "atq-deal-card-badge__label";
-const BADGE_DELTA_CLASS = "atq-deal-card-badge__delta";
-const CARD_HOST_CLASS = "atq-deal-card-host";
-const RENDER_THROTTLE_MS = 500;
 
+const BADGE_ATTR = "data-mytruck-anomaly";
+const BADGE_HOST_ATTR = "data-mytruck-anomaly-host";
+const BADGE_SELECTOR = `[${BADGE_ATTR}="1"]`;
+
+const RENDER_THROTTLE_MS = 500;
 const DEFAULT_CONFIG = {
-  anchorYear: 2017,
-  anchorMiles: 100000,
-  anchorPrice: 45000,
-  dollarsPerMile: 0.15,
-  dollarsPerYear: 1500,
-  goodDealThresholdDollars: 2000,
-  badDealThresholdDollars: -2000,
+  milesPerYear: 12000,
+  anomalyGoodMiles: -15000,
+  anomalyBadMiles: 15000,
   debug: false
 };
-
-const WATCHED_CONFIG_KEYS = Object.keys(DEFAULT_CONFIG);
+const WATCHED_KEYS = Object.keys(DEFAULT_CONFIG);
 
 let modelPromise;
 let mutationObserver;
@@ -38,19 +30,18 @@ function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function parseCurrencyToNumber(text) {
-  const raw = String(text || "");
-  const match = raw.match(/-?\$?\s*([0-9][0-9,]*(?:\.\d+)?)/);
+function parseYear(value) {
+  const match = String(value || "").match(/\b(19|20)\d{2}\b/);
   if (!match) {
     return null;
   }
 
-  const numeric = Number(match[1].replace(/,/g, ""));
-  return Number.isFinite(numeric) ? numeric : null;
+  const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
-function parseMileageToNumber(text) {
-  const normalized = cleanText(text).toLowerCase();
+function parseMiles(value) {
+  const normalized = cleanText(value).toLowerCase();
   if (!normalized) {
     return null;
   }
@@ -58,6 +49,7 @@ function parseMileageToNumber(text) {
   const matches = Array.from(
     normalized.matchAll(/([0-9][0-9,]*(?:\.\d+)?)\s*([km])?\s*(?:mi|miles)\b/g)
   );
+
   for (const match of matches) {
     const snippet = normalized.slice(
       Math.max(0, match.index - 6),
@@ -67,57 +59,58 @@ function parseMileageToNumber(text) {
       continue;
     }
 
-    let value = Number(match[1].replace(/,/g, ""));
-    if (!Number.isFinite(value)) {
+    let miles = Number(match[1].replace(/,/g, ""));
+    if (!Number.isFinite(miles)) {
       continue;
     }
 
     const suffix = (match[2] || "").toLowerCase();
     if (suffix === "k") {
-      value *= 1000;
+      miles *= 1000;
     } else if (suffix === "m") {
-      value *= 1000000;
+      miles *= 1000000;
     }
 
-    if (value > 0) {
-      return Math.round(value);
+    if (miles > 0) {
+      return Math.round(miles);
     }
   }
 
   return null;
 }
 
-function parseYearToNumber(text) {
-  const match = String(text || "").match(/\b(19|20)\d{2}\b/);
-  if (!match) {
-    return null;
-  }
-
-  const year = Number(match[0]);
-  return Number.isFinite(year) ? year : null;
-}
-
-function parseModelLine(text) {
-  const match = String(text || "").match(/\bF[\s-]?(250|350)\b/i);
-  if (!match) {
-    return null;
-  }
-  return `F-${match[1]}`;
-}
-
-function formatDeltaDollarsCompact(dollars) {
-  if (!Number.isFinite(dollars)) {
+function formatSignedMilesCompact(value) {
+  if (!Number.isFinite(value)) {
     return "N/A";
   }
 
-  const sign = dollars >= 0 ? "+" : "-";
-  const abs = Math.abs(dollars);
+  const sign = value >= 0 ? "+" : "-";
+  const abs = Math.abs(value);
+
   if (abs >= 1000) {
-    const thousands = abs / 1000;
-    const rounded = thousands >= 100 ? Math.round(thousands) : Number(thousands.toFixed(1));
-    return `${sign}$${rounded}k`;
+    const kValue = abs / 1000;
+    const rounded =
+      kValue >= 100 ? Math.round(kValue) : Number(kValue.toFixed(1));
+    return `${sign}${rounded}k`;
   }
-  return `${sign}$${Math.round(abs)}`;
+
+  return `${sign}${Math.round(abs)}`;
+}
+
+function formatMilesCompact(value) {
+  if (!Number.isFinite(value)) {
+    return "N/A";
+  }
+
+  const abs = Math.abs(value);
+  if (abs >= 1000) {
+    const kValue = abs / 1000;
+    const rounded =
+      kValue >= 100 ? Math.round(kValue) : Number(kValue.toFixed(1));
+    return `${rounded}k`;
+  }
+
+  return `${Math.round(abs)}`;
 }
 
 function ensureStylesInjected() {
@@ -128,59 +121,57 @@ function ensureStylesInjected() {
   const style = document.createElement("style");
   style.id = STYLE_TAG_ID;
   style.textContent = `
-.${CARD_HOST_CLASS} {
+[${BADGE_HOST_ATTR}="1"] {
   position: relative;
 }
 
-.${BADGE_CLASS} {
+[${BADGE_ATTR}="1"] {
   position: absolute;
   top: 8px;
   right: 8px;
-  z-index: 24;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 3px;
+  z-index: 30;
+  max-width: calc(100% - 16px);
+  padding: 4px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(17, 24, 39, 0.18);
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.25;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
   pointer-events: none;
 }
 
-.${BADGE_CLASS} .${BADGE_LABEL_CLASS},
-.${BADGE_CLASS} .${BADGE_DELTA_CLASS} {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 999px;
-  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
-  font-size: 11px;
-  line-height: 1.2;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
-}
-
-.${BADGE_CLASS} .${BADGE_LABEL_CLASS} {
+[${BADGE_ATTR}="1"] .mytruck-anomaly-main {
+  display: block;
   font-weight: 700;
-  letter-spacing: 0.02em;
-  color: #ffffff;
 }
 
-.${BADGE_CLASS} .${BADGE_DELTA_CLASS} {
-  font-weight: 600;
-  color: #111827;
-  background: #f3f4f6;
+[${BADGE_ATTR}="1"] .mytruck-anomaly-debug {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 500;
+  color: #4b5563;
 }
 
-.${BADGE_CLASS}.is-good .${BADGE_LABEL_CLASS} {
-  background: #1f8f4d;
+[${BADGE_ATTR}="1"][data-label="LOW"] {
+  border-color: rgba(16, 124, 61, 0.35);
+  background: rgba(236, 253, 245, 0.96);
+  color: #065f46;
 }
 
-.${BADGE_CLASS}.is-fair .${BADGE_LABEL_CLASS} {
-  background: #6b7280;
+[${BADGE_ATTR}="1"][data-label="HIGH"] {
+  border-color: rgba(185, 28, 28, 0.35);
+  background: rgba(254, 242, 242, 0.96);
+  color: #991b1b;
 }
 
-.${BADGE_CLASS}.is-overpriced .${BADGE_LABEL_CLASS} {
-  background: #c53929;
-}
-
-.${BADGE_CLASS}.is-debug .${BADGE_LABEL_CLASS} {
-  background: #1f2937;
+[${BADGE_ATTR}="1"][data-label="NORMAL"] {
+  border-color: rgba(55, 65, 81, 0.28);
+  background: rgba(249, 250, 251, 0.96);
+  color: #1f2937;
 }
 `;
 
@@ -192,189 +183,111 @@ function isSearchResultsPage() {
   return path.startsWith("/cars-for-sale") && !path.includes("/vehicle/");
 }
 
-function isCardVariantB(card) {
+function isLikelyListingCard(card) {
   if (!(card instanceof HTMLElement)) {
     return false;
   }
 
-  const isSponsored = card.querySelector(`${CARD_LINK_SELECTOR}[rel*='sponsored']`);
-  if (isSponsored) {
+  const title = cleanText(card.querySelector(CARD_TITLE_SELECTOR)?.textContent);
+  const hasLink = card.querySelector(CARD_LINK_SELECTOR) !== null;
+  const hasSpecs = card.querySelector(CARD_SPECS_SELECTOR) !== null;
+
+  if (!title || !hasLink || !hasSpecs) {
     return false;
   }
 
-  const considerNewText = cleanText(
+  const bannerText = cleanText(
     card.querySelector(CONSIDER_NEW_BANNER_SELECTOR)?.textContent
   ).toLowerCase();
-  if (considerNewText.includes("consider new")) {
-    return false;
-  }
-
-  const condition = cleanText(card.querySelector(CARD_CONDITION_SELECTOR)?.textContent).toLowerCase();
-  if (condition !== "used") {
-    return false;
-  }
-
-  const hasTitle = cleanText(card.querySelector(CARD_TITLE_SELECTOR)?.textContent).length > 0;
-  const hasPrice = card.querySelector(CARD_PRICE_SELECTOR) !== null;
-  const hasSpecs = card.querySelector(CARD_SPECS_SELECTOR) !== null;
-  return hasTitle && hasPrice && hasSpecs;
+  return !bannerText.includes("consider new");
 }
 
 function extractCardData(card) {
   const titleText = cleanText(card.querySelector(CARD_TITLE_SELECTOR)?.textContent);
-  const specsText = cleanText(card.querySelector(CARD_SPECS_SELECTOR)?.textContent);
-  const priceText = cleanText(card.querySelector(CARD_PRICE_SELECTOR)?.textContent);
+  const listingYear = parseYear(titleText);
 
-  const year = parseYearToNumber(titleText);
-  const price = parseCurrencyToNumber(priceText);
-
-  let miles = null;
+  let listingMiles = null;
   const mileNodes = card.querySelectorAll(CARD_MILES_SELECTOR);
   for (const node of mileNodes) {
-    miles = parseMileageToNumber(node.textContent);
-    if (miles !== null) {
+    listingMiles = parseMiles(node.textContent);
+    if (listingMiles !== null) {
       break;
     }
   }
-  if (miles === null) {
-    miles = parseMileageToNumber(specsText);
+
+  if (listingMiles === null) {
+    const specsText = cleanText(card.querySelector(CARD_SPECS_SELECTOR)?.textContent);
+    listingMiles = parseMiles(specsText);
   }
 
-  return {
-    year,
-    miles,
-    price,
-    modelLine: parseModelLine(titleText),
-    titleText,
-    specsText,
-    priceText
-  };
+  return { listingYear, listingMiles };
 }
 
 function removeBadge(card) {
-  const badge = card.querySelector(`.${BADGE_CLASS}`);
+  const badge = card.querySelector(BADGE_SELECTOR);
   if (badge) {
     badge.remove();
   }
-  card.classList.remove(CARD_HOST_CLASS);
+  card.removeAttribute(BADGE_HOST_ATTR);
 }
 
-function ensureBadgeElement(card) {
-  card.classList.add(CARD_HOST_CLASS);
-  let badge = card.querySelector(`.${BADGE_CLASS}`);
+function upsertBadge(card, modelResult, cfg) {
+  let badge = card.querySelector(BADGE_SELECTOR);
   if (!badge) {
     badge = document.createElement("div");
-    badge.className = BADGE_CLASS;
+    badge.setAttribute(BADGE_ATTR, "1");
     card.appendChild(badge);
   }
-  return badge;
-}
 
-function renderBadge(card, payload) {
-  const badge = ensureBadgeElement(card);
-  badge.className = BADGE_CLASS;
+  card.setAttribute(BADGE_HOST_ATTR, "1");
+  badge.dataset.label = modelResult.label;
 
-  if (payload.label === "GOOD") {
-    badge.classList.add("is-good");
-  } else if (payload.label === "FAIR") {
-    badge.classList.add("is-fair");
-  } else if (payload.label === "OVERPRICED") {
-    badge.classList.add("is-overpriced");
-  } else {
-    badge.classList.add("is-debug");
-  }
+  const mainLine = `Miles: ${formatSignedMilesCompact(modelResult.anomalyMiles)} (${modelResult.label})`;
+  const debugLine = cfg.debug
+    ? `Exp: ${formatMilesCompact(modelResult.expectedMiles)} | Age: ${modelResult.ageYears}y`
+    : "";
 
-  badge.dataset.label = payload.label;
-  if (payload.modelLine) {
-    badge.dataset.modelLine = payload.modelLine;
-  } else {
-    delete badge.dataset.modelLine;
-  }
-
-  badge.innerHTML = `
-    <span class="${BADGE_LABEL_CLASS}">${payload.label}</span>
-    <span class="${BADGE_DELTA_CLASS}">${payload.deltaText}</span>
-  `;
-
-  if (payload.debugTitle) {
-    badge.title = payload.debugTitle;
-  } else {
-    badge.removeAttribute("title");
-  }
+  badge.innerHTML = `<span class="mytruck-anomaly-main">${mainLine}</span>${
+    debugLine ? `<span class="mytruck-anomaly-debug">${debugLine}</span>` : ""
+  }`;
 }
 
 function annotateCard(card, cfg, modelApi) {
-  if (!isCardVariantB(card)) {
+  if (!isLikelyListingCard(card)) {
     removeBadge(card);
     return;
   }
 
-  const extracted = extractCardData(card);
-  const hasData =
-    Number.isFinite(extracted.year) &&
-    Number.isFinite(extracted.miles) &&
-    Number.isFinite(extracted.price);
-
-  if (!hasData) {
-    if (cfg.debug) {
-      renderBadge(card, {
-        label: "N/A",
-        deltaText: "N/A",
-        modelLine: extracted.modelLine,
-        debugTitle: `Missing data: year=${extracted.year ?? "?"}, miles=${
-          extracted.miles ?? "?"
-        }, price=${extracted.price ?? "?"}`
-      });
-    } else {
-      removeBadge(card);
-    }
+  const { listingYear, listingMiles } = extractCardData(card);
+  if (!Number.isFinite(listingYear) || !Number.isFinite(listingMiles)) {
+    removeBadge(card);
     return;
   }
 
-  const assessment = modelApi.dealAssessment(
-    {
-      year: extracted.year,
-      miles: extracted.miles,
-      price: extracted.price
-    },
-    cfg
-  );
-
-  if (!assessment || !Number.isFinite(assessment.dealDelta)) {
-    if (cfg.debug) {
-      renderBadge(card, {
-        label: "N/A",
-        deltaText: "N/A",
-        modelLine: extracted.modelLine,
-        debugTitle: "Unable to compute deal assessment."
-      });
-    } else {
-      removeBadge(card);
-    }
+  const result = modelApi.computeMilesAnomaly(listingYear, listingMiles, cfg);
+  if (!result) {
+    removeBadge(card);
     return;
   }
 
-  renderBadge(card, {
-    label: assessment.label,
-    deltaText: formatDeltaDollarsCompact(assessment.dealDelta),
-    modelLine: extracted.modelLine
-  });
+  upsertBadge(card, result, cfg);
 }
 
-function clearAllInjectedBadges() {
-  const badges = document.querySelectorAll(`.${BADGE_CLASS}`);
+function clearAllBadges() {
+  const badges = document.querySelectorAll(BADGE_SELECTOR);
   for (const badge of badges) {
     badge.remove();
   }
-  const hosts = document.querySelectorAll(`.${CARD_HOST_CLASS}`);
+
+  const hosts = document.querySelectorAll(`[${BADGE_HOST_ATTR}="1"]`);
   for (const host of hosts) {
-    host.classList.remove(CARD_HOST_CLASS);
+    host.removeAttribute(BADGE_HOST_ATTR);
   }
 }
 
-async function getDealModelApi() {
+async function getModelApi() {
   if (!modelPromise) {
-    modelPromise = import(chrome.runtime.getURL("dealModel.js"));
+    modelPromise = import(chrome.runtime.getURL("anomalyModel.js"));
   }
   return modelPromise;
 }
@@ -383,46 +296,47 @@ async function loadConfig() {
   return chrome.storage.sync.get(DEFAULT_CONFIG);
 }
 
-async function renderAllCards(reason) {
+async function annotateAllCards(reason) {
   if (renderInFlight) {
-    scheduleRender(`${reason}-queued`);
+    scheduleAnnotate(`${reason}-queued`);
     return;
   }
 
   renderInFlight = true;
+
   try {
     if (!isSearchResultsPage()) {
-      clearAllInjectedBadges();
+      clearAllBadges();
       return;
     }
 
     ensureStylesInjected();
-    const [cfg, modelApi] = await Promise.all([loadConfig(), getDealModelApi()]);
+    const [cfg, modelApi] = await Promise.all([loadConfig(), getModelApi()]);
     const cards = document.querySelectorAll(CARD_SELECTOR);
+
     for (const card of cards) {
       annotateCard(card, cfg, modelApi);
     }
   } catch (error) {
-    console.error("AutoTrader deal badge render failed:", error);
+    console.error("Miles anomaly annotation failed:", error);
   } finally {
     renderInFlight = false;
   }
 }
 
-function scheduleRender(reason) {
+function scheduleAnnotate(reason) {
   if (throttleTimer !== null) {
     return;
   }
 
   throttleTimer = window.setTimeout(() => {
     throttleTimer = null;
-    void renderAllCards(reason);
+    void annotateAllCards(reason);
   }, RENDER_THROTTLE_MS);
 }
 
-function isBadgeOnlyMutation(mutation) {
-  const target = mutation.target;
-  if (target instanceof Element && target.closest(`.${BADGE_CLASS}`)) {
+function isInternalBadgeMutation(mutation) {
+  if (mutation.target instanceof Element && mutation.target.closest(BADGE_SELECTOR)) {
     return true;
   }
 
@@ -435,10 +349,11 @@ function isBadgeOnlyMutation(mutation) {
     if (!(node instanceof Element)) {
       return false;
     }
-    if (!node.classList.contains(BADGE_CLASS) && !node.closest(`.${BADGE_CLASS}`)) {
+    if (!(node.matches(BADGE_SELECTOR) || node.closest(BADGE_SELECTOR))) {
       return false;
     }
   }
+
   return true;
 }
 
@@ -450,7 +365,7 @@ function attachMutationObserver() {
   mutationObserver = new MutationObserver((mutations) => {
     if (location.href !== lastKnownUrl) {
       lastKnownUrl = location.href;
-      scheduleRender("url-change");
+      scheduleAnnotate("url-change");
       return;
     }
 
@@ -459,8 +374,8 @@ function attachMutationObserver() {
     }
 
     for (const mutation of mutations) {
-      if (!isBadgeOnlyMutation(mutation)) {
-        scheduleRender("mutation");
+      if (!isInternalBadgeMutation(mutation)) {
+        scheduleAnnotate("mutation");
         return;
       }
     }
@@ -478,9 +393,9 @@ function attachStorageListener() {
       return;
     }
 
-    for (const key of WATCHED_CONFIG_KEYS) {
+    for (const key of WATCHED_KEYS) {
       if (changes[key]) {
-        scheduleRender(`storage:${key}`);
+        scheduleAnnotate(`storage:${key}`);
         return;
       }
     }
@@ -493,18 +408,18 @@ function attachNavigationHooks() {
 
   history.pushState = function pushStateHook(...args) {
     const result = originalPushState.apply(this, args);
-    scheduleRender("pushState");
+    scheduleAnnotate("pushState");
     return result;
   };
 
   history.replaceState = function replaceStateHook(...args) {
     const result = originalReplaceState.apply(this, args);
-    scheduleRender("replaceState");
+    scheduleAnnotate("replaceState");
     return result;
   };
 
   window.addEventListener("popstate", () => {
-    scheduleRender("popstate");
+    scheduleAnnotate("popstate");
   });
 }
 
@@ -512,7 +427,7 @@ function init() {
   attachNavigationHooks();
   attachStorageListener();
   attachMutationObserver();
-  scheduleRender("init");
+  scheduleAnnotate("init");
 }
 
 init();

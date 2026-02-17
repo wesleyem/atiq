@@ -1,26 +1,14 @@
 const form = document.getElementById("options-form");
 const statusEl = document.getElementById("status");
-const anchorYearInput = document.getElementById("anchorYear");
-const anchorMilesInput = document.getElementById("anchorMiles");
-const anchorPriceInput = document.getElementById("anchorPrice");
-const dollarsPerMileInput = document.getElementById("dollarsPerMile");
-const dollarsPerYearInput = document.getElementById("dollarsPerYear");
-const goodDealThresholdDollarsInput = document.getElementById(
-  "goodDealThresholdDollars"
-);
-const badDealThresholdDollarsInput = document.getElementById(
-  "badDealThresholdDollars"
-);
+const milesPerYearInput = document.getElementById("milesPerYear");
+const anomalyGoodMilesInput = document.getElementById("anomalyGoodMiles");
+const anomalyBadMilesInput = document.getElementById("anomalyBadMiles");
 const debugInput = document.getElementById("debug");
 
 const DEFAULT_CONFIG = {
-  anchorYear: 2017,
-  anchorMiles: 100000,
-  anchorPrice: 45000,
-  dollarsPerMile: 0.15,
-  dollarsPerYear: 1500,
-  goodDealThresholdDollars: 2000,
-  badDealThresholdDollars: -2000,
+  milesPerYear: 12000,
+  anomalyGoodMiles: -15000,
+  anomalyBadMiles: 15000,
   debug: false
 };
 
@@ -32,13 +20,9 @@ function numberOrDefault(value, fallback) {
 async function restoreOptions() {
   const stored = await chrome.storage.sync.get(DEFAULT_CONFIG);
 
-  anchorYearInput.value = stored.anchorYear;
-  anchorMilesInput.value = stored.anchorMiles;
-  anchorPriceInput.value = stored.anchorPrice;
-  dollarsPerMileInput.value = stored.dollarsPerMile;
-  dollarsPerYearInput.value = stored.dollarsPerYear;
-  goodDealThresholdDollarsInput.value = stored.goodDealThresholdDollars;
-  badDealThresholdDollarsInput.value = stored.badDealThresholdDollars;
+  milesPerYearInput.value = stored.milesPerYear;
+  anomalyGoodMilesInput.value = stored.anomalyGoodMiles;
+  anomalyBadMilesInput.value = stored.anomalyBadMiles;
   debugInput.checked = Boolean(stored.debug);
 }
 
@@ -46,26 +30,14 @@ async function saveOptions(event) {
   event.preventDefault();
 
   const payload = {
-    anchorYear: Math.trunc(numberOrDefault(anchorYearInput.value, DEFAULT_CONFIG.anchorYear)),
-    anchorMiles: Math.trunc(
-      numberOrDefault(anchorMilesInput.value, DEFAULT_CONFIG.anchorMiles)
+    milesPerYear: Math.trunc(
+      numberOrDefault(milesPerYearInput.value, DEFAULT_CONFIG.milesPerYear)
     ),
-    anchorPrice: numberOrDefault(anchorPriceInput.value, DEFAULT_CONFIG.anchorPrice),
-    dollarsPerMile: numberOrDefault(
-      dollarsPerMileInput.value,
-      DEFAULT_CONFIG.dollarsPerMile
+    anomalyGoodMiles: Math.trunc(
+      numberOrDefault(anomalyGoodMilesInput.value, DEFAULT_CONFIG.anomalyGoodMiles)
     ),
-    dollarsPerYear: numberOrDefault(
-      dollarsPerYearInput.value,
-      DEFAULT_CONFIG.dollarsPerYear
-    ),
-    goodDealThresholdDollars: numberOrDefault(
-      goodDealThresholdDollarsInput.value,
-      DEFAULT_CONFIG.goodDealThresholdDollars
-    ),
-    badDealThresholdDollars: numberOrDefault(
-      badDealThresholdDollarsInput.value,
-      DEFAULT_CONFIG.badDealThresholdDollars
+    anomalyBadMiles: Math.trunc(
+      numberOrDefault(anomalyBadMilesInput.value, DEFAULT_CONFIG.anomalyBadMiles)
     ),
     debug: debugInput.checked
   };
