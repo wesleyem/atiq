@@ -6,4 +6,4 @@ if (openOptionsButton) {
   });
 }
 
-console.log("AutoTrader Miles Overlay popup loaded.");
+console.log("AutoTrader DealScore Overlay popup loaded.");

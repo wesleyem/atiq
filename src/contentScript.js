@@ -1,9 +1,11 @@
-const STYLE_TAG_ID = "mytruck-anomaly-style";
+const STYLE_TAG_ID = "mytruck-dealscore-style";
 const CARD_SELECTOR = "[data-cmp='itemCard']";
 const CARD_BODY_SELECTOR = ".item-card-body";
 const CARD_TITLE_SELECTOR = "h2[data-cmp='subheading']";
 const CARD_LINK_SELECTOR = "a[data-cmp='link']";
 const CARD_SPECS_SELECTOR = "[data-cmp='listingSpecifications']";
+const CARD_PRICE_SELECTOR = "[data-cmp='firstPrice']";
+const CARD_KBB_BADGE_SELECTOR = "[data-cmp='DealBadge']";
 const CARD_MILES_SELECTOR =
   "[data-cmp='listingSpecifications'] li, [data-cmp='listingSpecifications'] span";
 const CONSIDER_NEW_BANNER_SELECTOR = ".text-blue-darker.text-bold";
@@ -16,25 +18,36 @@ const FLUID_AD_CONTAINER_SELECTOR = "[data-cmp^='cntnr-fluid-ad']";
 const SPOTLIGHT_AD_SLOT_SELECTOR = "[data-cmp='adSlot'][id*='spotlightAd']";
 const FILTER_INLINE_CAROUSEL_SELECTOR = "[data-cmp='filter-inline-carousel']";
 const FILTER_INLINE_FEATURE_SELECTOR = "[data-cmp='filter-inline-feature']";
+const MY_WALLET_GRID_SELECTOR = "[data-cmp='myWalletGridPlacement']";
+const PREORDER_CONTAINER_SELECTOR = "div.display-flex.fade-in";
+const PREORDER_CARD_SELECTOR = "[data-cmp='preorderCard']";
 const SUGGESTED_CARD_TEXT_MARKERS = [
   "for illustration purposes only",
   "may not match exact trim or color of the vehicle shown"
 ];
 
-const BADGE_ATTR = "data-mytruck-anomaly";
-const BADGE_HOST_ATTR = "data-mytruck-anomaly-host";
+const BADGE_ATTR = "data-mytruck-dealscore";
+const BADGE_HOST_ATTR = "data-mytruck-dealscore-host";
 const BADGE_SELECTOR = `[${BADGE_ATTR}="1"]`;
 
 const RENDER_THROTTLE_MS = 500;
 const DEFAULT_CONFIG = {
   milesPerYear: 12000,
-  anomalyGoodMiles: -15000,
-  anomalyBadMiles: 15000,
+  milesScale: 20000,
+  kbbWeight: 12,
+  milesWeight: 10,
+  goodDealScore: 70,
+  poorDealScore: 40,
+  hideSponsoredCards: true,
+  hideSuggestedCards: true,
+  hideAdModules: true,
+  hideInlineFilterCarousel: true,
+  hideMyWalletCard: true,
+  hidePreorderCards: true,
   debug: false
 };
 const WATCHED_KEYS = Object.keys(DEFAULT_CONFIG);
 
-let modelPromise;
 let mutationObserver;
 let throttleTimer = null;
 let renderInFlight = false;
@@ -44,6 +57,15 @@ function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function toNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function parseYear(value) {
   const match = String(value || "").match(/\b(19|20)\d{2}\b/);
   if (!match) {
@@ -51,6 +73,21 @@ function parseYear(value) {
   }
 
   const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseCurrency(value) {
+  const normalized = cleanText(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const match = normalized.match(/\$?\s*([0-9][0-9,]*(?:\.\d+)?)/);
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number(match[1].replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -127,6 +164,16 @@ function formatMilesCompact(value) {
   return `${Math.round(abs)}`;
 }
 
+function formatDeltaMilesInK(value) {
+  if (!Number.isFinite(value)) {
+    return "N/A";
+  }
+
+  const inK = Math.round(value / 1000);
+  const sign = inK > 0 ? "+" : "";
+  return `${sign}${inK}k`;
+}
+
 function ensureStylesInjected() {
   if (document.getElementById(STYLE_TAG_ID)) {
     return;
@@ -157,9 +204,35 @@ function ensureStylesInjected() {
   pointer-events: none;
 }
 
+[${BADGE_ATTR}="1"][data-tier="good"] {
+  border-color: rgba(22, 101, 52, 0.4);
+  background: rgba(236, 253, 245, 0.96);
+  color: #065f46;
+}
+
+[${BADGE_ATTR}="1"][data-tier="poor"] {
+  border-color: rgba(153, 27, 27, 0.45);
+  background: rgba(254, 242, 242, 0.96);
+  color: #991b1b;
+}
+
+[${BADGE_ATTR}="1"][data-tier="neutral"] {
+  border-color: rgba(17, 24, 39, 0.18);
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
+}
+
 [${BADGE_ATTR}="1"] .mytruck-anomaly-main {
   display: block;
   font-weight: 700;
+}
+
+[${BADGE_ATTR}="1"] .mytruck-dealscore-subline {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #374151;
 }
 
 [${BADGE_ATTR}="1"] .mytruck-anomaly-debug {
@@ -168,24 +241,6 @@ function ensureStylesInjected() {
   font-size: 10px;
   font-weight: 500;
   color: #4b5563;
-}
-
-[${BADGE_ATTR}="1"][data-label="LOW"] {
-  border-color: rgba(16, 124, 61, 0.35);
-  background: rgba(236, 253, 245, 0.96);
-  color: #065f46;
-}
-
-[${BADGE_ATTR}="1"][data-label="HIGH"] {
-  border-color: rgba(185, 28, 28, 0.35);
-  background: rgba(254, 242, 242, 0.96);
-  color: #991b1b;
-}
-
-[${BADGE_ATTR}="1"][data-label="NORMAL"] {
-  border-color: rgba(55, 65, 81, 0.28);
-  background: rgba(249, 250, 251, 0.96);
-  color: #1f2937;
 }
 `;
 
@@ -285,14 +340,18 @@ function isLikelyListingCard(card) {
 }
 
 function extractCardData(card) {
-  const titleText = cleanText(card.querySelector(CARD_TITLE_SELECTOR)?.textContent);
+  const titleNode = card.querySelector(CARD_TITLE_SELECTOR);
+  const titleText = cleanText(titleNode?.textContent);
   const listingYear = parseYear(titleText);
+  const yearSelectorUsed = listingYear !== null ? CARD_TITLE_SELECTOR : "";
 
   let listingMiles = null;
+  let milesSelectorUsed = "";
   const mileNodes = card.querySelectorAll(CARD_MILES_SELECTOR);
   for (const node of mileNodes) {
     listingMiles = parseMiles(node.textContent);
     if (listingMiles !== null) {
+      milesSelectorUsed = CARD_MILES_SELECTOR;
       break;
     }
   }
@@ -300,9 +359,29 @@ function extractCardData(card) {
   if (listingMiles === null) {
     const specsText = cleanText(card.querySelector(CARD_SPECS_SELECTOR)?.textContent);
     listingMiles = parseMiles(specsText);
+    if (listingMiles !== null) {
+      milesSelectorUsed = CARD_SPECS_SELECTOR;
+    }
   }
 
-  return { listingYear, listingMiles };
+  const priceText = cleanText(card.querySelector(CARD_PRICE_SELECTOR)?.textContent);
+  const listingPrice = parseCurrency(priceText);
+  const priceSelectorUsed = listingPrice !== null ? CARD_PRICE_SELECTOR : "";
+
+  const kbbBadge = parseKbbBadge(card);
+
+  return {
+    listingYear,
+    listingMiles,
+    listingPrice,
+    kbbBadge,
+    selectors: {
+      year: yearSelectorUsed,
+      miles: milesSelectorUsed,
+      price: priceSelectorUsed,
+      kbb: kbbBadge.selectorUsed || ""
+    }
+  };
 }
 
 function removeBadge(card) {
@@ -363,6 +442,115 @@ function removeSponsoredCard(card) {
   return true;
 }
 
+function parseKbbBadge(card) {
+  const node = card.querySelector(CARD_KBB_BADGE_SELECTOR);
+  const text = cleanText(node?.textContent).toLowerCase();
+
+  if (text.includes("great price")) {
+    return { label: "Great", kbbScore: 1.0, selectorUsed: CARD_KBB_BADGE_SELECTOR };
+  }
+
+  if (text.includes("good price")) {
+    return { label: "Good", kbbScore: 0.5, selectorUsed: CARD_KBB_BADGE_SELECTOR };
+  }
+
+  return { label: "—", kbbScore: 0.0, selectorUsed: "" };
+}
+
+function getKbbValue(label) {
+  const normalized = cleanText(label).toLowerCase();
+  if (normalized.includes("great")) {
+    return 1.0;
+  }
+  if (normalized.includes("good")) {
+    return 0.5;
+  }
+  return 0.0;
+}
+
+function normalizeConfig(cfg = {}) {
+  const goodDealScore = clamp(
+    Math.trunc(toNumber(cfg.goodDealScore, DEFAULT_CONFIG.goodDealScore)),
+    0,
+    100
+  );
+  const poorDealScore = clamp(
+    Math.trunc(toNumber(cfg.poorDealScore, DEFAULT_CONFIG.poorDealScore)),
+    0,
+    100
+  );
+
+  const kbbWeightRaw = Math.max(
+    0,
+    toNumber(cfg.kbbWeightRaw, toNumber(cfg.kbbWeight, DEFAULT_CONFIG.kbbWeight))
+  );
+  const milesWeightRaw = Math.max(
+    0,
+    toNumber(
+      cfg.milesWeightRaw,
+      toNumber(cfg.milesWeight, DEFAULT_CONFIG.milesWeight)
+    )
+  );
+
+  return {
+    milesPerYear: Math.max(1, Math.trunc(toNumber(cfg.milesPerYear, DEFAULT_CONFIG.milesPerYear))),
+    milesScale: Math.max(1, toNumber(cfg.milesScale, DEFAULT_CONFIG.milesScale)),
+    kbbWeightRaw,
+    milesWeightRaw,
+    goodDealScore,
+    poorDealScore,
+    hideSponsoredCards: Boolean(cfg.hideSponsoredCards),
+    hideSuggestedCards: Boolean(cfg.hideSuggestedCards),
+    hideAdModules: Boolean(cfg.hideAdModules),
+    hideInlineFilterCarousel: Boolean(cfg.hideInlineFilterCarousel),
+    hideMyWalletCard: Boolean(cfg.hideMyWalletCard),
+    hidePreorderCards: Boolean(cfg.hidePreorderCards),
+    debug: Boolean(cfg.debug)
+  };
+}
+
+function computeDealScore(listing, cfg) {
+  const listingYear = toNumber(listing?.listingYear, NaN);
+  const listingMiles = toNumber(listing?.listingMiles, NaN);
+
+  if (!Number.isFinite(listingYear) || !Number.isFinite(listingMiles)) {
+    return null;
+  }
+
+  const currentYear = new Date().getFullYear();
+  const ageYears = Math.max(currentYear - listingYear, 0);
+  const expectedMiles = Math.max(ageYears * cfg.milesPerYear, cfg.milesPerYear);
+  const deltaMiles = listingMiles - expectedMiles;
+  const kbbValue = toNumber(listing?.kbbValue, getKbbValue(listing?.kbbLabel));
+  const normalizedKbb = (kbbValue - 0.5) * 2;
+  const normalizedMiles = clamp(-deltaMiles / cfg.milesScale, -1, 1);
+
+  const weightSum = cfg.kbbWeightRaw + cfg.milesWeightRaw + 1e-9;
+  const normKbbWeight = cfg.kbbWeightRaw / weightSum;
+  const normMilesWeight = cfg.milesWeightRaw / weightSum;
+
+  const combined =
+    normKbbWeight * normalizedKbb + normMilesWeight * normalizedMiles;
+  const scaled = (combined + 1) / 2;
+  const dealScore = clamp(Math.round(scaled * 100), 0, 100);
+
+  return {
+    listingYear,
+    listingMiles,
+    ageYears,
+    expectedMiles,
+    deltaMiles,
+    normalizedKbb,
+    normalizedMiles,
+    normKbbWeight,
+    normMilesWeight,
+    combined,
+    scaled,
+    dealScore,
+    kbbValue
+  };
+}
+
 function getBadgeHost(card) {
   const body = card.querySelector(CARD_BODY_SELECTOR);
   if (body instanceof HTMLElement) {
@@ -372,28 +560,56 @@ function getBadgeHost(card) {
   return card;
 }
 
-function removeAdModules() {
-  const fluidContainers = document.querySelectorAll(FLUID_AD_CONTAINER_SELECTOR);
-  for (const container of fluidContainers) {
-    removeNodeAndCleanup(container);
+function removeAdModules(cfg) {
+  if (cfg.hideAdModules) {
+    const fluidContainers = document.querySelectorAll(FLUID_AD_CONTAINER_SELECTOR);
+    for (const container of fluidContainers) {
+      removeNodeAndCleanup(container);
+    }
+
+    const spotlightAdSlots = document.querySelectorAll(SPOTLIGHT_AD_SLOT_SELECTOR);
+    for (const adSlot of spotlightAdSlots) {
+      const container = adSlot.closest(FLUID_AD_CONTAINER_SELECTOR);
+      removeNodeAndCleanup(container || adSlot);
+    }
   }
 
-  const spotlightAdSlots = document.querySelectorAll(SPOTLIGHT_AD_SLOT_SELECTOR);
-  for (const adSlot of spotlightAdSlots) {
-    const container = adSlot.closest(FLUID_AD_CONTAINER_SELECTOR);
-    removeNodeAndCleanup(container || adSlot);
+  if (cfg.hideInlineFilterCarousel) {
+    const filterCarousels = document.querySelectorAll(FILTER_INLINE_CAROUSEL_SELECTOR);
+    for (const carousel of filterCarousels) {
+      removeNodeAndCleanup(carousel);
+    }
+
+    const inlineFeatures = document.querySelectorAll(FILTER_INLINE_FEATURE_SELECTOR);
+    for (const feature of inlineFeatures) {
+      const carousel = feature.closest(FILTER_INLINE_CAROUSEL_SELECTOR);
+      if (!carousel) {
+        removeNodeAndCleanup(feature);
+      }
+    }
   }
 
-  const filterCarousels = document.querySelectorAll(FILTER_INLINE_CAROUSEL_SELECTOR);
-  for (const carousel of filterCarousels) {
-    removeNodeAndCleanup(carousel);
+  if (cfg.hideMyWalletCard) {
+    const myWalletBlocks = document.querySelectorAll(MY_WALLET_GRID_SELECTOR);
+    for (const block of myWalletBlocks) {
+      removeNodeAndCleanup(block);
+    }
   }
 
-  const inlineFeatures = document.querySelectorAll(FILTER_INLINE_FEATURE_SELECTOR);
-  for (const feature of inlineFeatures) {
-    const carousel = feature.closest(FILTER_INLINE_CAROUSEL_SELECTOR);
-    if (!carousel) {
-      removeNodeAndCleanup(feature);
+  if (cfg.hidePreorderCards) {
+    const preorderContainers = document.querySelectorAll(PREORDER_CONTAINER_SELECTOR);
+    for (const container of preorderContainers) {
+      if (!(container instanceof HTMLElement)) {
+        continue;
+      }
+
+      const hasImmediatePreorderChild = Array.from(container.children).some(
+        (child) => child instanceof Element && child.matches(PREORDER_CARD_SELECTOR)
+      );
+
+      if (hasImmediatePreorderChild) {
+        removeNodeAndCleanup(container);
+      }
     }
   }
 }
@@ -414,24 +630,39 @@ function upsertBadge(card, modelResult, cfg) {
   }
 
   host.setAttribute(BADGE_HOST_ATTR, "1");
-  badge.dataset.label = modelResult.label;
+  const scoreValue = Math.round(modelResult.dealScore);
+  let tier = "neutral";
+  if (scoreValue >= cfg.goodDealScore) {
+    tier = "good";
+  } else if (scoreValue <= cfg.poorDealScore) {
+    tier = "poor";
+  }
 
-  const mainLine = `Miles: ${formatSignedMilesCompact(modelResult.anomalyMiles)} (${modelResult.label})`;
+  badge.dataset.tier = tier;
+  const mainLine = `DealScore: ${scoreValue}`;
+  const kbbLine = `KBB: ${modelResult.kbbLabel}`;
+  const milesLine = `Miles: ${formatDeltaMilesInK(modelResult.deltaMiles)} vs exp`;
   const debugLine = cfg.debug
-    ? `Exp: ${formatMilesCompact(modelResult.expectedMiles)} | Age: ${modelResult.ageYears}y`
+    ? [
+        `Year: ${modelResult.listingYear} | Miles: ${formatMilesCompact(modelResult.listingMiles)} | Exp: ${formatMilesCompact(modelResult.expectedMiles)}`,
+        `Sel y:${modelResult.selectors.year || "—"} m:${modelResult.selectors.miles || "—"} k:${modelResult.selectors.kbb || "—"}`
+      ].join("<br>")
     : "";
 
-  badge.innerHTML = `<span class="mytruck-anomaly-main">${mainLine}</span>${
-    debugLine ? `<span class="mytruck-anomaly-debug">${debugLine}</span>` : ""
-  }`;
+  badge.innerHTML = `
+<span class="mytruck-anomaly-main">${mainLine}</span>
+<span class="mytruck-dealscore-subline">${kbbLine}</span>
+<span class="mytruck-dealscore-subline">${milesLine}</span>
+${debugLine ? `<span class="mytruck-anomaly-debug">${debugLine}</span>` : ""}
+`;
 }
 
-function annotateCard(card, cfg, modelApi) {
-  if (removeSponsoredCard(card)) {
+function annotateCard(card, cfg) {
+  if (cfg.hideSponsoredCards && removeSponsoredCard(card)) {
     return;
   }
 
-  if (isSuggestedCard(card)) {
+  if (cfg.hideSuggestedCards && isSuggestedCard(card)) {
     removeCard(card);
     return;
   }
@@ -441,17 +672,38 @@ function annotateCard(card, cfg, modelApi) {
     return;
   }
 
-  const { listingYear, listingMiles } = extractCardData(card);
+  const {
+    listingYear,
+    listingMiles,
+    kbbBadge,
+    selectors
+  } = extractCardData(card);
+
   if (!Number.isFinite(listingYear) || !Number.isFinite(listingMiles)) {
     removeBadge(card);
     return;
   }
 
-  const result = modelApi.computeMilesAnomaly(listingYear, listingMiles, cfg);
-  if (!result) {
+  const computed = computeDealScore(
+    {
+      listingYear,
+      listingMiles,
+      kbbLabel: kbbBadge.label,
+      kbbValue: kbbBadge.kbbScore
+    },
+    cfg
+  );
+  if (!computed) {
     removeBadge(card);
     return;
   }
+  const result = {
+    ...computed,
+    kbbLabel: kbbBadge.label,
+    listingYear,
+    listingMiles,
+    selectors
+  };
 
   upsertBadge(card, result, cfg);
 }
@@ -466,13 +718,6 @@ function clearAllBadges() {
   for (const host of hosts) {
     host.removeAttribute(BADGE_HOST_ATTR);
   }
-}
-
-async function getModelApi() {
-  if (!modelPromise) {
-    modelPromise = import(chrome.runtime.getURL("anomalyModel.js"));
-  }
-  return modelPromise;
 }
 
 async function loadConfig() {
@@ -494,15 +739,15 @@ async function annotateAllCards(reason) {
     }
 
     ensureStylesInjected();
-    const [cfg, modelApi] = await Promise.all([loadConfig(), getModelApi()]);
-    removeAdModules();
+    const cfg = normalizeConfig(await loadConfig());
+    removeAdModules(cfg);
     const cards = document.querySelectorAll(CARD_SELECTOR);
 
     for (const card of cards) {
-      annotateCard(card, cfg, modelApi);
+      annotateCard(card, cfg);
     }
   } catch (error) {
-    console.error("Miles anomaly annotation failed:", error);
+    console.error("DealScore annotation failed:", error);
   } finally {
     renderInFlight = false;
   }

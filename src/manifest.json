@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "AutoTrader Miles Overlay",
-  "description": "Annotates AutoTrader listings with miles-for-year anomaly badges.",
+  "name": "AutoTrader DealScore Overlay",
+  "description": "Annotates AutoTrader listings with DealScore based on KBB badge and miles anomaly.",
   "version": "1.1.0",
   "permissions": [
     "storage"
@@ -17,16 +17,6 @@
       ],
       "js": [
         "contentScript.js"
-      ]
-    }
-  ],
-  "web_accessible_resources": [
-    {
-      "resources": [
-        "anomalyModel.js"
-      ],
-      "matches": [
-        "https://www.autotrader.com/*"
       ]
     }
   ]
