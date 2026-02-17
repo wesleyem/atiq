@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Hello World Popup",
+  "description": "A minimal Chromium extension that shows a Hello World popup.",
+  "version": "1.0.0",
+  "permissions": ["storage"],
+  "options_page": "options.html",
+  "action": {
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://www.autotrader.com/*"],
+      "js": ["contentScript.js"]
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["anomalyModel.js"],
+      "matches": ["https://www.autotrader.com/*"]
+    }
+  ]
+}
