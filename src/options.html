@@ -16,6 +16,11 @@
         font-size: 20px;
       }
 
+      h2 {
+        margin: 20px 0 8px;
+        font-size: 16px;
+      }
+
       p {
         margin: 0 0 12px;
         color: #555;
@@ -54,6 +59,28 @@
       #status {
         min-height: 1em;
         font-size: 14px;
+      }
+
+      .scenarios {
+        margin-top: 16px;
+        font-size: 13px;
+        color: #444;
+      }
+
+      .scenarios ul {
+        margin: 8px 0 0;
+        padding-left: 18px;
+      }
+
+      .scenarios li {
+        margin-bottom: 8px;
+        line-height: 1.35;
+      }
+
+      .preset {
+        margin-top: 4px;
+        color: #666;
+        font-size: 12px;
       }
     </style>
   </head>
@@ -104,6 +131,40 @@
       <button type="submit">Save</button>
       <div id="status" aria-live="polite"></div>
     </form>
+
+    <section class="scenarios" aria-label="Example tuning scenarios">
+      <h2>Example Tuning Scenarios</h2>
+      <ul>
+        <li>
+          High-mileage market: increase <strong>Miles Per Year</strong> to
+          <strong>15000–18000</strong> so normal local trucks are not over-penalized.
+        </li>
+        <li>
+          Low-usage market: lower <strong>Miles Per Year</strong> to
+          <strong>8000–10000</strong> for stricter expectations.
+        </li>
+        <li>
+          Mileage too dominant: increase <strong>Miles Scale</strong> to
+          <strong>30000</strong> to soften mileage impact.
+        </li>
+        <li>
+          Mileage not impactful enough: lower <strong>Miles Scale</strong> to
+          <strong>12000</strong> for stronger mileage influence.
+        </li>
+        <li>
+          Trust KBB more: increase <strong>KBB Weight</strong> to
+          <strong>15–20</strong> and reduce <strong>Miles Weight</strong>.
+        </li>
+        <li>
+          Prioritize mechanical wear: increase <strong>Miles Weight</strong> to
+          <strong>14–18</strong> and reduce <strong>KBB Weight</strong>.
+        </li>
+      </ul>
+
+      <p class="preset"><strong>Preset (KBB-first):</strong> kbbWeight 18, milesWeight 6</p>
+      <p class="preset"><strong>Preset (Miles-first):</strong> kbbWeight 8, milesWeight 16</p>
+      <p class="preset"><strong>Preset (Balanced):</strong> kbbWeight 12, milesWeight 10</p>
+    </section>
 
     <script src="options.js"></script>
   </body>
