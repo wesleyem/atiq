@@ -46,9 +46,18 @@ jobs:
 
       - name: Create release package
         run: |
+          set -euo pipefail
+          VERSION="${{ steps.tag.outputs.tag_name }}"
+          VERSION="${VERSION#v}"
+
           rm -rf dist
           mkdir -p dist/unpacked
           cp -R src/. dist/unpacked/
+
+          TMP_FILE="$(mktemp)"
+          jq --arg version "${VERSION}" '.version = $version' dist/unpacked/manifest.json > "${TMP_FILE}"
+          mv "${TMP_FILE}" dist/unpacked/manifest.json
+
           cd dist/unpacked
           zip -r -9 "../chromium-extension-${{ steps.tag.outputs.tag_name }}.zip" .
 
