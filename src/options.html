@@ -120,6 +120,22 @@
         </span>
       </label>
 
+      <label for="goodDealScore">
+        Good Deal Threshold
+        <input id="goodDealScore" name="goodDealScore" type="number" step="1" />
+        <span class="field-help">
+          DealScore at or above this value is treated as a good deal (green).
+        </span>
+      </label>
+
+      <label for="poorDealScore">
+        Poor Deal Threshold
+        <input id="poorDealScore" name="poorDealScore" type="number" step="1" />
+        <span class="field-help">
+          DealScore at or below this value is treated as a poor deal (red).
+        </span>
+      </label>
+
       <label for="debug">
         <input id="debug" name="debug" type="checkbox" />
         Debug
@@ -158,6 +174,10 @@
         <li>
           Prioritize mechanical wear: increase <strong>Miles Weight</strong> to
           <strong>14–18</strong> and reduce <strong>KBB Weight</strong>.
+        </li>
+        <li>
+          Color boundaries: raise <strong>Good Deal Threshold</strong> for stricter green
+          badges, or lower <strong>Poor Deal Threshold</strong> for stricter red badges.
         </li>
       </ul>
 

@@ -33,6 +33,8 @@ const DEFAULT_CONFIG = {
   milesScale: 20000,
   kbbWeight: 12,
   milesWeight: 10,
+  goodDealScore: 70,
+  poorDealScore: 40,
   debug: false
 };
 const WATCHED_KEYS = Object.keys(DEFAULT_CONFIG);
@@ -191,6 +193,24 @@ function ensureStylesInjected() {
   line-height: 1.25;
   box-shadow: 0 1px 6px rgba(0, 0, 0, 0.12);
   pointer-events: none;
+}
+
+[${BADGE_ATTR}="1"][data-tier="good"] {
+  border-color: rgba(22, 101, 52, 0.4);
+  background: rgba(236, 253, 245, 0.96);
+  color: #065f46;
+}
+
+[${BADGE_ATTR}="1"][data-tier="poor"] {
+  border-color: rgba(153, 27, 27, 0.45);
+  background: rgba(254, 242, 242, 0.96);
+  color: #991b1b;
+}
+
+[${BADGE_ATTR}="1"][data-tier="neutral"] {
+  border-color: rgba(17, 24, 39, 0.18);
+  background: rgba(255, 255, 255, 0.95);
+  color: #111827;
 }
 
 [${BADGE_ATTR}="1"] .mytruck-anomaly-main {
@@ -429,11 +449,24 @@ function parseKbbBadge(card) {
 }
 
 function normalizeConfig(cfg = {}) {
+  const goodDealScore = clamp(
+    Math.trunc(toNumber(cfg.goodDealScore, DEFAULT_CONFIG.goodDealScore)),
+    0,
+    100
+  );
+  const poorDealScore = clamp(
+    Math.trunc(toNumber(cfg.poorDealScore, DEFAULT_CONFIG.poorDealScore)),
+    0,
+    100
+  );
+
   return {
     milesPerYear: Math.max(1, Math.trunc(toNumber(cfg.milesPerYear, DEFAULT_CONFIG.milesPerYear))),
     milesScale: Math.max(1, toNumber(cfg.milesScale, DEFAULT_CONFIG.milesScale)),
     kbbWeight: toNumber(cfg.kbbWeight, DEFAULT_CONFIG.kbbWeight),
     milesWeight: toNumber(cfg.milesWeight, DEFAULT_CONFIG.milesWeight),
+    goodDealScore,
+    poorDealScore,
     debug: Boolean(cfg.debug)
   };
 }
@@ -512,6 +545,14 @@ function upsertBadge(card, modelResult, cfg) {
 
   host.setAttribute(BADGE_HOST_ATTR, "1");
   const scoreValue = Math.round(modelResult.dealScore);
+  let tier = "neutral";
+  if (scoreValue >= cfg.goodDealScore) {
+    tier = "good";
+  } else if (scoreValue <= cfg.poorDealScore) {
+    tier = "poor";
+  }
+
+  badge.dataset.tier = tier;
   const mainLine = `DealScore: ${scoreValue}`;
   const kbbLine = `KBB: ${modelResult.kbbLabel}`;
   const milesLine = `Miles: ${formatDeltaMilesInK(modelResult.deltaMiles)} vs exp`;
