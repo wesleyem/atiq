@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
-  "name": "Hello World Popup",
-  "description": "A minimal Chromium extension that shows a Hello World popup.",
+  "name": "AutoTrader Miles Overlay",
+  "description": "Annotates AutoTrader listings with miles-for-year anomaly badges.",
   "version": "1.1.0",
   "permissions": [
     "storage"

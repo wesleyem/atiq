@@ -3,22 +3,36 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hello World</title>
+    <title>AutoTrader Miles Overlay</title>
     <style>
       body {
         margin: 12px;
         font-family: Arial, sans-serif;
-        min-width: 180px;
+        min-width: 220px;
       }
       h1 {
         margin: 0;
-        font-size: 20px;
+        font-size: 16px;
+      }
+      p {
+        margin: 8px 0 12px;
+        color: #444;
+        font-size: 13px;
+      }
+      button {
+        border: 1px solid #ccc;
+        border-radius: 6px;
+        background: #fff;
+        padding: 6px 10px;
+        font-size: 13px;
+        cursor: pointer;
       }
     </style>
   </head>
   <body>
-    <h1>Hello, world!</h1>
-    <!-- Optional: add icon files (e.g., icons/16.png, 48.png, 128.png) and reference them in manifest.json -->
+    <h1>AutoTrader Miles Overlay</h1>
+    <p>Configure anomaly thresholds in extension options.</p>
+    <button id="open-options" type="button">Open Options</button>
     <script src="popup.js"></script>
   </body>
 </html>
