@@ -1,5 +1,20 @@
-const OVERLAY_ID = "autotrader-deal-overlay";
-const RENDER_THROTTLE_MS = 350;
+const STYLE_TAG_ID = "atq-deal-card-style";
+const CARD_SELECTOR = "[data-cmp='itemCard']";
+const CARD_LINK_SELECTOR = "a[data-cmp='link']";
+const CARD_TITLE_SELECTOR = "h2[data-cmp='subheading']";
+const CARD_CONDITION_SELECTOR = "[data-cmp='listingCondition']";
+const CARD_PRICE_SELECTOR =
+  "[data-cmp='pricing'] [data-cmp='firstPrice'], [data-cmp='firstPrice']";
+const CARD_SPECS_SELECTOR = "[data-cmp='listingSpecifications']";
+const CARD_MILES_SELECTOR =
+  "[data-cmp='listingSpecifications'] li, [data-cmp='listingSpecifications'] span";
+const CONSIDER_NEW_BANNER_SELECTOR = ".text-blue-darker.text-bold";
+const BADGE_CLASS = "atq-deal-card-badge";
+const BADGE_LABEL_CLASS = "atq-deal-card-badge__label";
+const BADGE_DELTA_CLASS = "atq-deal-card-badge__delta";
+const CARD_HOST_CLASS = "atq-deal-card-host";
+const RENDER_THROTTLE_MS = 500;
+
 const DEFAULT_CONFIG = {
   anchorYear: 2017,
   anchorMiles: 100000,
@@ -10,438 +25,365 @@ const DEFAULT_CONFIG = {
   badDealThresholdDollars: -2000,
   debug: false
 };
-const PRICE_SELECTORS = [
-  "[data-cmp='pricing'] [data-cmp='firstPrice']",
-  "[data-cmp='pricingBreakdown'] tr:first-child td:last-child",
-  "[data-cmp='firstPrice']",
-  "[data-cmp='pricing']",
-  "[data-cmp='priceSection'] [data-cmp='heading'] + div",
-  "[data-cmp='price']",
-  "[data-testid*='price']",
-  "h2",
-  "h3"
-];
-const YEAR_SELECTORS = [
-  "#vehicle-details-heading",
-  "[data-cmp='listingTitleContainer'] h1[data-cmp='heading']",
-  "[data-cmp='listingTitleContainer'] h1",
-  "h1",
-  "[data-cmp='heading']",
-  "[data-testid*='title']",
-  "title"
-];
-const MILES_SELECTORS = [
-  "[data-cmp='listingTitleContainer'] + [data-cmp='section'] span.no-wrap",
-  "[data-cmp='listingTitleContainer'] + [data-cmp='section'] span",
-  "[data-cmp='mileage']",
-  "[data-cmp*='mile']",
-  "[data-testid*='mileage']",
-  "[data-testid*='odometer']",
-  "[data-cmp='section'] span.no-wrap",
-  "span.no-wrap",
-  "li",
-  "span"
-];
 
-const currencyFormatter = new Intl.NumberFormat("en-US", {
-  style: "currency",
-  currency: "USD",
-  maximumFractionDigits: 0
-});
-const numberFormatter = new Intl.NumberFormat("en-US");
-const percentFormatter = new Intl.NumberFormat("en-US", {
-  maximumFractionDigits: 1
-});
+const WATCHED_CONFIG_KEYS = Object.keys(DEFAULT_CONFIG);
 
 let modelPromise;
-let modelApi;
-let observer;
+let mutationObserver;
 let throttleTimer = null;
 let renderInFlight = false;
-let lastUrl = location.href;
-
-function toNumber(value) {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function parsePrice(text) {
-  if (!text) {
-    return null;
-  }
-
-  const dollarMatch = text.match(/\$\s*([0-9][0-9,]*(?:\.\d+)?)/);
-  if (dollarMatch) {
-    return toNumber(dollarMatch[1].replace(/,/g, ""));
-  }
-
-  return null;
-}
-
-function parseYear(text) {
-  if (!text) {
-    return null;
-  }
-
-  const yearMatch = text.match(/\b(19|20)\d{2}\b/);
-  if (yearMatch) {
-    return toNumber(yearMatch[0]);
-  }
-
-  return null;
-}
-
-function parseMiles(text) {
-  if (!text) {
-    return null;
-  }
-
-  const normalized = cleanText(text);
-  const lowered = normalized.toLowerCase();
-  const matches = Array.from(
-    lowered.matchAll(/([0-9][0-9,]*(?:\.\d+)?)\s*(?:mi|miles)\b/g)
-  );
-
-  if (matches.length === 0) {
-    return null;
-  }
-
-  let bestCandidate = null;
-
-  for (const match of matches) {
-    const snippet = lowered.slice(match.index, match.index + 28);
-    if (snippet.includes("away")) {
-      continue;
-    }
-
-    const parsed = toNumber(match[1].replace(/,/g, ""));
-    if (!Number.isFinite(parsed) || parsed <= 0) {
-      continue;
-    }
-
-    if (bestCandidate === null) {
-      bestCandidate = parsed;
-      continue;
-    }
-
-    const bestLooksLikeOdometer = bestCandidate >= 1000;
-    const parsedLooksLikeOdometer = parsed >= 1000;
-
-    if (
-      (parsedLooksLikeOdometer && !bestLooksLikeOdometer) ||
-      parsed > bestCandidate
-    ) {
-      bestCandidate = parsed;
-    }
-  }
-
-  if (bestCandidate !== null) {
-    return bestCandidate;
-  }
-
-  return null;
-}
+let lastKnownUrl = location.href;
 
 function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
-function readFirstParsed(selectors, parser, debugLog, keyName) {
-  for (const selector of selectors) {
-    const nodes = document.querySelectorAll(selector);
-    let inspected = 0;
-    for (const node of nodes) {
-      inspected += 1;
-      if (inspected > 30) {
-        break;
-      }
-
-      const text = cleanText(node.textContent);
-      const parsed = parser(text);
-      if (parsed !== null) {
-        debugLog.push(`${keyName}: ${parsed} (selector "${selector}")`);
-        return parsed;
-      }
-    }
+function parseCurrencyToNumber(text) {
+  const raw = String(text || "");
+  const match = raw.match(/-?\$?\s*([0-9][0-9,]*(?:\.\d+)?)/);
+  if (!match) {
+    return null;
   }
 
-  debugLog.push(`${keyName}: no selector match`);
-  return null;
+  const numeric = Number(match[1].replace(/,/g, ""));
+  return Number.isFinite(numeric) ? numeric : null;
 }
 
-function walkJson(value, visitor) {
-  if (!value) {
-    return;
+function parseMileageToNumber(text) {
+  const normalized = cleanText(text).toLowerCase();
+  if (!normalized) {
+    return null;
   }
 
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      walkJson(item, visitor);
-    }
-    return;
-  }
-
-  if (typeof value === "object") {
-    visitor(value);
-    for (const nested of Object.values(value)) {
-      walkJson(nested, visitor);
-    }
-  }
-}
-
-function extractFromJsonLd(debugLog) {
-  const scripts = document.querySelectorAll("script[type='application/ld+json']");
-  let year = null;
-  let miles = null;
-  let price = null;
-
-  for (const script of scripts) {
-    let parsed;
-    try {
-      parsed = JSON.parse(script.textContent || "");
-    } catch (error) {
+  const matches = Array.from(
+    normalized.matchAll(/([0-9][0-9,]*(?:\.\d+)?)\s*([km])?\s*(?:mi|miles)\b/g)
+  );
+  for (const match of matches) {
+    const snippet = normalized.slice(
+      Math.max(0, match.index - 6),
+      match.index + match[0].length + 10
+    );
+    if (snippet.includes("away")) {
       continue;
     }
 
-    walkJson(parsed, (obj) => {
-      if (year === null) {
-        year =
-          parseYear(cleanText(obj.vehicleModelDate)) ??
-          parseYear(cleanText(obj.modelDate)) ??
-          parseYear(cleanText(obj.name));
-      }
+    let value = Number(match[1].replace(/,/g, ""));
+    if (!Number.isFinite(value)) {
+      continue;
+    }
 
-      if (miles === null) {
-        const rawMiles = obj.mileageFromOdometer;
-        if (rawMiles && typeof rawMiles === "object") {
-          miles = toNumber(rawMiles.value) ?? parseMiles(cleanText(rawMiles.value));
-        } else {
-          miles = toNumber(rawMiles) ?? parseMiles(cleanText(rawMiles));
-        }
-      }
+    const suffix = (match[2] || "").toLowerCase();
+    if (suffix === "k") {
+      value *= 1000;
+    } else if (suffix === "m") {
+      value *= 1000000;
+    }
 
-      if (price === null) {
-        const offers = obj.offers;
-        if (offers && typeof offers === "object") {
-          if (Array.isArray(offers)) {
-            for (const offer of offers) {
-              const offerPrice = toNumber(offer && offer.price);
-              if (offerPrice !== null) {
-                price = offerPrice;
-                break;
-              }
-            }
-          } else {
-            price = toNumber(offers.price);
-          }
-        }
-
-        if (price === null) {
-          price = toNumber(obj.price) ?? parsePrice(cleanText(obj.price));
-        }
-      }
-    });
-
-    if (year !== null || miles !== null || price !== null) {
-      break;
+    if (value > 0) {
+      return Math.round(value);
     }
   }
 
-  if (year !== null || miles !== null || price !== null) {
-    debugLog.push(
-      `jsonld: year=${year ?? "?"}, miles=${miles ?? "?"}, price=${price ?? "?"}`
-    );
-  } else {
-    debugLog.push("jsonld: no useful values");
-  }
-
-  return { year, miles, price };
+  return null;
 }
 
-function extractFromKnownVdpNodes(debugLog) {
-  const year = readFirstParsed(YEAR_SELECTORS, parseYear, debugLog, "year");
-  const miles = readFirstParsed(MILES_SELECTORS, parseMiles, debugLog, "miles");
-  const price = readFirstParsed(PRICE_SELECTORS, parsePrice, debugLog, "price");
-
-  return { year, miles, price };
-}
-
-function extractListingData() {
-  const debugLog = [];
-  const domData = extractFromKnownVdpNodes(debugLog);
-  const jsonLdData = extractFromJsonLd(debugLog);
-
-  let year = domData.year ?? jsonLdData.year;
-  let miles = domData.miles ?? jsonLdData.miles;
-  let price = domData.price ?? jsonLdData.price;
-
-  if (year === null) {
-    year = parseYear(cleanText(document.title));
-    if (year !== null) {
-      debugLog.push(`year: ${year} (title fallback)`);
-    }
+function parseYearToNumber(text) {
+  const match = String(text || "").match(/\b(19|20)\d{2}\b/);
+  if (!match) {
+    return null;
   }
 
-  if (price === null || miles === null || year === null) {
-    const bodyText = cleanText(document.body && document.body.innerText).slice(
-      0,
-      120000
-    );
-    if (year === null) {
-      year = parseYear(bodyText);
-      if (year !== null) {
-        debugLog.push(`year: ${year} (body text fallback)`);
-      }
-    }
-    if (miles === null) {
-      miles = parseMiles(bodyText);
-      if (miles !== null) {
-        debugLog.push(`miles: ${miles} (body text fallback)`);
-      }
-    }
-    if (price === null) {
-      price = parsePrice(bodyText);
-      if (price !== null) {
-        debugLog.push(`price: ${price} (body text fallback)`);
-      }
-    }
-  }
-
-  debugLog.push(
-    `final: year=${year ?? "missing"}, miles=${miles ?? "missing"}, price=${price ?? "missing"}`
-  );
-  return { year, miles, price, debugLog };
+  const year = Number(match[0]);
+  return Number.isFinite(year) ? year : null;
 }
 
-function formatCurrency(value) {
-  if (!Number.isFinite(value)) {
-    return "n/a";
+function parseModelLine(text) {
+  const match = String(text || "").match(/\bF[\s-]?(250|350)\b/i);
+  if (!match) {
+    return null;
   }
-  return currencyFormatter.format(value);
+  return `F-${match[1]}`;
 }
 
-function formatNumber(value) {
-  if (!Number.isFinite(value)) {
-    return "n/a";
+function formatDeltaDollarsCompact(dollars) {
+  if (!Number.isFinite(dollars)) {
+    return "N/A";
   }
-  return numberFormatter.format(Math.round(value));
+
+  const sign = dollars >= 0 ? "+" : "-";
+  const abs = Math.abs(dollars);
+  if (abs >= 1000) {
+    const thousands = abs / 1000;
+    const rounded = thousands >= 100 ? Math.round(thousands) : Number(thousands.toFixed(1));
+    return `${sign}$${rounded}k`;
+  }
+  return `${sign}$${Math.round(abs)}`;
 }
 
-function formatPercent(value) {
-  if (!Number.isFinite(value)) {
-    return "n/a";
-  }
-  return `${percentFormatter.format(value)}%`;
-}
-
-function badgeColor(label) {
-  if (label === "GOOD") {
-    return "#1f8f4d";
-  }
-  if (label === "OVERPRICED") {
-    return "#c53929";
-  }
-  return "#8a6d1b";
-}
-
-function ensureOverlay() {
-  let root = document.getElementById(OVERLAY_ID);
-  if (!root) {
-    root = document.createElement("section");
-    root.id = OVERLAY_ID;
-    root.style.position = "fixed";
-    root.style.top = "14px";
-    root.style.right = "14px";
-    root.style.zIndex = "2147483647";
-    root.style.background = "rgba(16, 20, 27, 0.96)";
-    root.style.color = "#f4f7ff";
-    root.style.width = "300px";
-    root.style.maxWidth = "calc(100vw - 24px)";
-    root.style.border = "1px solid rgba(121, 138, 179, 0.4)";
-    root.style.borderRadius = "10px";
-    root.style.padding = "10px 12px";
-    root.style.fontFamily =
-      "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif";
-    root.style.fontSize = "13px";
-    root.style.lineHeight = "1.35";
-    root.style.boxShadow = "0 8px 24px rgba(0, 0, 0, 0.35)";
-    document.body.appendChild(root);
-  }
-  return root;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;");
-}
-
-function renderOverlay({ cfg, listing, assessment }) {
-  const root = ensureOverlay();
-  const hasAllFields =
-    Number.isFinite(listing.year) &&
-    Number.isFinite(listing.miles) &&
-    Number.isFinite(listing.price);
-
-  if (!hasAllFields || !assessment || !Number.isFinite(assessment.expectedPrice)) {
-    const debugBlock = cfg.debug
-      ? `<pre style="margin:8px 0 0;white-space:pre-wrap;color:#bfd1ff;font-size:11px;">${escapeHtml(
-          listing.debugLog.join("\n")
-        )}</pre>`
-      : "";
-    root.innerHTML = `
-      <div style="font-weight:700;margin-bottom:6px;">AutoTrader Overlay</div>
-      <div style="color:#ffd78a;">insufficient data</div>
-      ${debugBlock}
-    `;
+function ensureStylesInjected() {
+  if (document.getElementById(STYLE_TAG_ID)) {
     return;
   }
 
-  const deltaPrefix = assessment.dealDelta > 0 ? "+" : "";
-  root.innerHTML = `
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
-      <div style="font-weight:700;">AutoTrader Overlay</div>
-      <span style="padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;background:${badgeColor(
-        assessment.label
-      )};color:#fff;">${assessment.label}</span>
-    </div>
-    <div style="margin-top:6px;">Price: <strong>${formatCurrency(listing.price)}</strong></div>
-    <div>Year: <strong>${formatNumber(listing.year)}</strong></div>
-    <div>Miles: <strong>${formatNumber(listing.miles)}</strong></div>
-    <hr style="border:none;border-top:1px solid rgba(121,138,179,0.35);margin:8px 0;" />
-    <div>Expected price: <strong>${formatCurrency(assessment.expectedPrice)}</strong></div>
-    <div>Deal delta: <strong>${deltaPrefix}${formatCurrency(
-    assessment.dealDelta
-  )}</strong> (${deltaPrefix}${formatPercent(assessment.dealDeltaPct)})</div>
-    ${
-      cfg.debug
-        ? `<pre style="margin:8px 0 0;white-space:pre-wrap;color:#bfd1ff;font-size:11px;">${escapeHtml(
-            listing.debugLog.join("\n")
-          )}</pre>`
-        : ""
-    }
-  `;
+  const style = document.createElement("style");
+  style.id = STYLE_TAG_ID;
+  style.textContent = `
+.${CARD_HOST_CLASS} {
+  position: relative;
 }
 
-async function getModelApi() {
-  if (modelApi) {
-    return modelApi;
+.${BADGE_CLASS} {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 24;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  pointer-events: none;
+}
+
+.${BADGE_CLASS} .${BADGE_LABEL_CLASS},
+.${BADGE_CLASS} .${BADGE_DELTA_CLASS} {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: -apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+  font-size: 11px;
+  line-height: 1.2;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.15);
+}
+
+.${BADGE_CLASS} .${BADGE_LABEL_CLASS} {
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+}
+
+.${BADGE_CLASS} .${BADGE_DELTA_CLASS} {
+  font-weight: 600;
+  color: #111827;
+  background: #f3f4f6;
+}
+
+.${BADGE_CLASS}.is-good .${BADGE_LABEL_CLASS} {
+  background: #1f8f4d;
+}
+
+.${BADGE_CLASS}.is-fair .${BADGE_LABEL_CLASS} {
+  background: #6b7280;
+}
+
+.${BADGE_CLASS}.is-overpriced .${BADGE_LABEL_CLASS} {
+  background: #c53929;
+}
+
+.${BADGE_CLASS}.is-debug .${BADGE_LABEL_CLASS} {
+  background: #1f2937;
+}
+`;
+
+  (document.head || document.documentElement).appendChild(style);
+}
+
+function isSearchResultsPage() {
+  const path = location.pathname || "";
+  return path.startsWith("/cars-for-sale") && !path.includes("/vehicle/");
+}
+
+function isCardVariantB(card) {
+  if (!(card instanceof HTMLElement)) {
+    return false;
   }
 
+  const isSponsored = card.querySelector(`${CARD_LINK_SELECTOR}[rel*='sponsored']`);
+  if (isSponsored) {
+    return false;
+  }
+
+  const considerNewText = cleanText(
+    card.querySelector(CONSIDER_NEW_BANNER_SELECTOR)?.textContent
+  ).toLowerCase();
+  if (considerNewText.includes("consider new")) {
+    return false;
+  }
+
+  const condition = cleanText(card.querySelector(CARD_CONDITION_SELECTOR)?.textContent).toLowerCase();
+  if (condition !== "used") {
+    return false;
+  }
+
+  const hasTitle = cleanText(card.querySelector(CARD_TITLE_SELECTOR)?.textContent).length > 0;
+  const hasPrice = card.querySelector(CARD_PRICE_SELECTOR) !== null;
+  const hasSpecs = card.querySelector(CARD_SPECS_SELECTOR) !== null;
+  return hasTitle && hasPrice && hasSpecs;
+}
+
+function extractCardData(card) {
+  const titleText = cleanText(card.querySelector(CARD_TITLE_SELECTOR)?.textContent);
+  const specsText = cleanText(card.querySelector(CARD_SPECS_SELECTOR)?.textContent);
+  const priceText = cleanText(card.querySelector(CARD_PRICE_SELECTOR)?.textContent);
+
+  const year = parseYearToNumber(titleText);
+  const price = parseCurrencyToNumber(priceText);
+
+  let miles = null;
+  const mileNodes = card.querySelectorAll(CARD_MILES_SELECTOR);
+  for (const node of mileNodes) {
+    miles = parseMileageToNumber(node.textContent);
+    if (miles !== null) {
+      break;
+    }
+  }
+  if (miles === null) {
+    miles = parseMileageToNumber(specsText);
+  }
+
+  return {
+    year,
+    miles,
+    price,
+    modelLine: parseModelLine(titleText),
+    titleText,
+    specsText,
+    priceText
+  };
+}
+
+function removeBadge(card) {
+  const badge = card.querySelector(`.${BADGE_CLASS}`);
+  if (badge) {
+    badge.remove();
+  }
+  card.classList.remove(CARD_HOST_CLASS);
+}
+
+function ensureBadgeElement(card) {
+  card.classList.add(CARD_HOST_CLASS);
+  let badge = card.querySelector(`.${BADGE_CLASS}`);
+  if (!badge) {
+    badge = document.createElement("div");
+    badge.className = BADGE_CLASS;
+    card.appendChild(badge);
+  }
+  return badge;
+}
+
+function renderBadge(card, payload) {
+  const badge = ensureBadgeElement(card);
+  badge.className = BADGE_CLASS;
+
+  if (payload.label === "GOOD") {
+    badge.classList.add("is-good");
+  } else if (payload.label === "FAIR") {
+    badge.classList.add("is-fair");
+  } else if (payload.label === "OVERPRICED") {
+    badge.classList.add("is-overpriced");
+  } else {
+    badge.classList.add("is-debug");
+  }
+
+  badge.dataset.label = payload.label;
+  if (payload.modelLine) {
+    badge.dataset.modelLine = payload.modelLine;
+  } else {
+    delete badge.dataset.modelLine;
+  }
+
+  badge.innerHTML = `
+    <span class="${BADGE_LABEL_CLASS}">${payload.label}</span>
+    <span class="${BADGE_DELTA_CLASS}">${payload.deltaText}</span>
+  `;
+
+  if (payload.debugTitle) {
+    badge.title = payload.debugTitle;
+  } else {
+    badge.removeAttribute("title");
+  }
+}
+
+function annotateCard(card, cfg, modelApi) {
+  if (!isCardVariantB(card)) {
+    removeBadge(card);
+    return;
+  }
+
+  const extracted = extractCardData(card);
+  const hasData =
+    Number.isFinite(extracted.year) &&
+    Number.isFinite(extracted.miles) &&
+    Number.isFinite(extracted.price);
+
+  if (!hasData) {
+    if (cfg.debug) {
+      renderBadge(card, {
+        label: "N/A",
+        deltaText: "N/A",
+        modelLine: extracted.modelLine,
+        debugTitle: `Missing data: year=${extracted.year ?? "?"}, miles=${
+          extracted.miles ?? "?"
+        }, price=${extracted.price ?? "?"}`
+      });
+    } else {
+      removeBadge(card);
+    }
+    return;
+  }
+
+  const assessment = modelApi.dealAssessment(
+    {
+      year: extracted.year,
+      miles: extracted.miles,
+      price: extracted.price
+    },
+    cfg
+  );
+
+  if (!assessment || !Number.isFinite(assessment.dealDelta)) {
+    if (cfg.debug) {
+      renderBadge(card, {
+        label: "N/A",
+        deltaText: "N/A",
+        modelLine: extracted.modelLine,
+        debugTitle: "Unable to compute deal assessment."
+      });
+    } else {
+      removeBadge(card);
+    }
+    return;
+  }
+
+  renderBadge(card, {
+    label: assessment.label,
+    deltaText: formatDeltaDollarsCompact(assessment.dealDelta),
+    modelLine: extracted.modelLine
+  });
+}
+
+function clearAllInjectedBadges() {
+  const badges = document.querySelectorAll(`.${BADGE_CLASS}`);
+  for (const badge of badges) {
+    badge.remove();
+  }
+  const hosts = document.querySelectorAll(`.${CARD_HOST_CLASS}`);
+  for (const host of hosts) {
+    host.classList.remove(CARD_HOST_CLASS);
+  }
+}
+
+async function getDealModelApi() {
   if (!modelPromise) {
     modelPromise = import(chrome.runtime.getURL("dealModel.js"));
   }
-
-  modelApi = await modelPromise;
-  return modelApi;
+  return modelPromise;
 }
 
 async function loadConfig() {
   return chrome.storage.sync.get(DEFAULT_CONFIG);
 }
 
-async function render(reason) {
+async function renderAllCards(reason) {
   if (renderInFlight) {
     scheduleRender(`${reason}-queued`);
     return;
@@ -449,38 +391,19 @@ async function render(reason) {
 
   renderInFlight = true;
   try {
-    const [cfg, model] = await Promise.all([loadConfig(), getModelApi()]);
-    const listing = extractListingData();
+    if (!isSearchResultsPage()) {
+      clearAllInjectedBadges();
+      return;
+    }
 
-    const hasRequiredData =
-      Number.isFinite(listing.year) &&
-      Number.isFinite(listing.miles) &&
-      Number.isFinite(listing.price);
-
-    const assessment = hasRequiredData
-      ? model.dealAssessment(
-          {
-            year: listing.year,
-            miles: listing.miles,
-            price: listing.price
-          },
-          cfg
-        )
-      : null;
-
-    renderOverlay({ cfg, listing, assessment });
+    ensureStylesInjected();
+    const [cfg, modelApi] = await Promise.all([loadConfig(), getDealModelApi()]);
+    const cards = document.querySelectorAll(CARD_SELECTOR);
+    for (const card of cards) {
+      annotateCard(card, cfg, modelApi);
+    }
   } catch (error) {
-    const fallbackCfg = await loadConfig();
-    renderOverlay({
-      cfg: fallbackCfg,
-      listing: {
-        year: null,
-        miles: null,
-        price: null,
-        debugLog: [`render error: ${String(error && error.message)}`]
-      },
-      assessment: null
-    });
+    console.error("AutoTrader deal badge render failed:", error);
   } finally {
     renderInFlight = false;
   }
@@ -490,41 +413,77 @@ function scheduleRender(reason) {
   if (throttleTimer !== null) {
     return;
   }
+
   throttleTimer = window.setTimeout(() => {
     throttleTimer = null;
-    void render(reason);
+    void renderAllCards(reason);
   }, RENDER_THROTTLE_MS);
 }
 
-function observePage() {
-  if (observer) {
-    observer.disconnect();
+function isBadgeOnlyMutation(mutation) {
+  const target = mutation.target;
+  if (target instanceof Element && target.closest(`.${BADGE_CLASS}`)) {
+    return true;
   }
 
-  observer = new MutationObserver((mutations) => {
-    let shouldRender = false;
-    for (const mutation of mutations) {
-      const target =
-        mutation.target instanceof Element ? mutation.target : mutation.target.parentElement;
-      if (!target || !target.closest(`#${OVERLAY_ID}`)) {
-        shouldRender = true;
-        break;
-      }
-    }
+  const changedNodes = [...mutation.addedNodes, ...mutation.removedNodes];
+  if (changedNodes.length === 0) {
+    return false;
+  }
 
-    if (!shouldRender) {
+  for (const node of changedNodes) {
+    if (!(node instanceof Element)) {
+      return false;
+    }
+    if (!node.classList.contains(BADGE_CLASS) && !node.closest(`.${BADGE_CLASS}`)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function attachMutationObserver() {
+  if (mutationObserver) {
+    mutationObserver.disconnect();
+  }
+
+  mutationObserver = new MutationObserver((mutations) => {
+    if (location.href !== lastKnownUrl) {
+      lastKnownUrl = location.href;
+      scheduleRender("url-change");
       return;
     }
 
-    if (location.href !== lastUrl) {
-      lastUrl = location.href;
+    if (!isSearchResultsPage()) {
+      return;
     }
-    scheduleRender("mutation");
+
+    for (const mutation of mutations) {
+      if (!isBadgeOnlyMutation(mutation)) {
+        scheduleRender("mutation");
+        return;
+      }
+    }
   });
 
-  observer.observe(document.documentElement, {
+  mutationObserver.observe(document.documentElement, {
     childList: true,
     subtree: true
+  });
+}
+
+function attachStorageListener() {
+  chrome.storage.onChanged.addListener((changes, areaName) => {
+    if (areaName !== "sync") {
+      return;
+    }
+
+    for (const key of WATCHED_CONFIG_KEYS) {
+      if (changes[key]) {
+        scheduleRender(`storage:${key}`);
+        return;
+      }
+    }
   });
 }
 
@@ -544,29 +503,15 @@ function attachNavigationHooks() {
     return result;
   };
 
-  window.addEventListener("popstate", () => scheduleRender("popstate"));
-}
-
-function attachStorageListener() {
-  chrome.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "sync") {
-      return;
-    }
-
-    const watchedKeys = Object.keys(DEFAULT_CONFIG);
-    for (const key of watchedKeys) {
-      if (changes[key]) {
-        scheduleRender(`storage:${key}`);
-        return;
-      }
-    }
+  window.addEventListener("popstate", () => {
+    scheduleRender("popstate");
   });
 }
 
 function init() {
-  observePage();
   attachNavigationHooks();
   attachStorageListener();
+  attachMutationObserver();
   scheduleRender("init");
 }
 
