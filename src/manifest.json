@@ -13,5 +13,11 @@
       "matches": ["https://www.autotrader.com/*"],
       "js": ["contentScript.js"]
     }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["dealModel.js"],
+      "matches": ["https://www.autotrader.com/*"]
+    }
   ]
 }
