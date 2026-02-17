@@ -1,11 +1,25 @@
 const STYLE_TAG_ID = "mytruck-anomaly-style";
 const CARD_SELECTOR = "[data-cmp='itemCard']";
+const CARD_BODY_SELECTOR = ".item-card-body";
 const CARD_TITLE_SELECTOR = "h2[data-cmp='subheading']";
 const CARD_LINK_SELECTOR = "a[data-cmp='link']";
 const CARD_SPECS_SELECTOR = "[data-cmp='listingSpecifications']";
 const CARD_MILES_SELECTOR =
   "[data-cmp='listingSpecifications'] li, [data-cmp='listingSpecifications'] span";
 const CONSIDER_NEW_BANNER_SELECTOR = ".text-blue-darker.text-bold";
+const SPONSORED_LINK_SELECTOR =
+  "a[data-cmp='link'][rel*='sponsored'], a[data-cmp='link'][href*='clickType=spotlight']";
+const CARD_FOOTER_SELECTOR = "[data-cmp='cntnr-listing-footer']";
+const SPONSORED_WRAPPER_SELECTOR = "[data-cmp='inventorySpotlightListing']";
+const LISTING_SCHEMA_SELECTOR = "script[data-cmp='lstgSchema']";
+const FLUID_AD_CONTAINER_SELECTOR = "[data-cmp^='cntnr-fluid-ad']";
+const SPOTLIGHT_AD_SLOT_SELECTOR = "[data-cmp='adSlot'][id*='spotlightAd']";
+const FILTER_INLINE_CAROUSEL_SELECTOR = "[data-cmp='filter-inline-carousel']";
+const FILTER_INLINE_FEATURE_SELECTOR = "[data-cmp='filter-inline-feature']";
+const SUGGESTED_CARD_TEXT_MARKERS = [
+  "for illustration purposes only",
+  "may not match exact trim or color of the vehicle shown"
+];
 
 const BADGE_ATTR = "data-mytruck-anomaly";
 const BADGE_HOST_ATTR = "data-mytruck-anomaly-host";
@@ -183,6 +197,74 @@ function isSearchResultsPage() {
   return path.startsWith("/cars-for-sale") && !path.includes("/vehicle/");
 }
 
+function getCardText(card) {
+  return cleanText(card?.textContent).toLowerCase();
+}
+
+function getSpotlightContainer(spotlight) {
+  const parent = spotlight?.parentElement;
+  if (!(parent instanceof HTMLElement)) {
+    return null;
+  }
+
+  const children = Array.from(parent.children);
+  const hasDirectSpotlight = children.includes(spotlight);
+  const hasDirectSchema = children.some((child) =>
+    child.matches?.(LISTING_SCHEMA_SELECTOR)
+  );
+
+  if (hasDirectSpotlight && hasDirectSchema) {
+    return parent;
+  }
+
+  return null;
+}
+
+function getSponsoredRemovalTarget(card) {
+  if (!(card instanceof HTMLElement)) {
+    return null;
+  }
+
+  const spotlight = card.closest(SPONSORED_WRAPPER_SELECTOR);
+  if (spotlight) {
+    const spotlightContainer = getSpotlightContainer(spotlight);
+    if (spotlightContainer) {
+      return spotlightContainer;
+    }
+    return spotlight;
+  }
+
+  if (card.querySelector(SPONSORED_LINK_SELECTOR)) {
+    return card;
+  }
+
+  const footerText = cleanText(card.querySelector(CARD_FOOTER_SELECTOR)?.textContent).toLowerCase();
+  if (footerText.includes("sponsored by")) {
+    return card;
+  }
+
+  return null;
+}
+
+function isSuggestedCard(card) {
+  if (!(card instanceof HTMLElement)) {
+    return false;
+  }
+
+  const text = getCardText(card);
+  for (const marker of SUGGESTED_CARD_TEXT_MARKERS) {
+    if (text.includes(marker)) {
+      return true;
+    }
+  }
+
+  const looksLikeMsrpSuggestion =
+    text.includes("starting msrp before options") &&
+    card.querySelector(CARD_SPECS_SELECTOR) === null;
+
+  return looksLikeMsrpSuggestion;
+}
+
 function isLikelyListingCard(card) {
   if (!(card instanceof HTMLElement)) {
     return false;
@@ -224,22 +306,114 @@ function extractCardData(card) {
 }
 
 function removeBadge(card) {
-  const badge = card.querySelector(BADGE_SELECTOR);
-  if (badge) {
+  const badges = card.querySelectorAll(BADGE_SELECTOR);
+  for (const badge of badges) {
     badge.remove();
   }
+
+  const hosts = card.querySelectorAll(`[${BADGE_HOST_ATTR}="1"]`);
+  for (const host of hosts) {
+    host.removeAttribute(BADGE_HOST_ATTR);
+  }
+
   card.removeAttribute(BADGE_HOST_ATTR);
 }
 
-function upsertBadge(card, modelResult, cfg) {
-  let badge = card.querySelector(BADGE_SELECTOR);
-  if (!badge) {
-    badge = document.createElement("div");
-    badge.setAttribute(BADGE_ATTR, "1");
-    card.appendChild(badge);
+function removeNodeAndCleanup(node) {
+  if (!(node instanceof HTMLElement)) {
+    return;
   }
 
-  card.setAttribute(BADGE_HOST_ATTR, "1");
+  const parent = node.parentElement;
+  if (node.isConnected) {
+    node.remove();
+  }
+
+  if (
+    parent instanceof HTMLDivElement &&
+    parent.children.length === 0 &&
+    cleanText(parent.textContent) === ""
+  ) {
+    parent.remove();
+  }
+}
+
+function removeCard(card) {
+  removeBadge(card);
+  removeNodeAndCleanup(card);
+}
+
+function removeSponsoredCard(card) {
+  const target = getSponsoredRemovalTarget(card);
+  if (!target) {
+    return false;
+  }
+
+  removeBadge(card);
+
+  if (target.matches(SPONSORED_WRAPPER_SELECTOR)) {
+    const schemaScript = target.previousElementSibling;
+    if (schemaScript?.matches?.(LISTING_SCHEMA_SELECTOR)) {
+      schemaScript.remove();
+    }
+  }
+
+  removeNodeAndCleanup(target);
+
+  return true;
+}
+
+function getBadgeHost(card) {
+  const body = card.querySelector(CARD_BODY_SELECTOR);
+  if (body instanceof HTMLElement) {
+    return body;
+  }
+
+  return card;
+}
+
+function removeAdModules() {
+  const fluidContainers = document.querySelectorAll(FLUID_AD_CONTAINER_SELECTOR);
+  for (const container of fluidContainers) {
+    removeNodeAndCleanup(container);
+  }
+
+  const spotlightAdSlots = document.querySelectorAll(SPOTLIGHT_AD_SLOT_SELECTOR);
+  for (const adSlot of spotlightAdSlots) {
+    const container = adSlot.closest(FLUID_AD_CONTAINER_SELECTOR);
+    removeNodeAndCleanup(container || adSlot);
+  }
+
+  const filterCarousels = document.querySelectorAll(FILTER_INLINE_CAROUSEL_SELECTOR);
+  for (const carousel of filterCarousels) {
+    removeNodeAndCleanup(carousel);
+  }
+
+  const inlineFeatures = document.querySelectorAll(FILTER_INLINE_FEATURE_SELECTOR);
+  for (const feature of inlineFeatures) {
+    const carousel = feature.closest(FILTER_INLINE_CAROUSEL_SELECTOR);
+    if (!carousel) {
+      removeNodeAndCleanup(feature);
+    }
+  }
+}
+
+function upsertBadge(card, modelResult, cfg) {
+  const host = getBadgeHost(card);
+
+  let badge = host.querySelector(BADGE_SELECTOR);
+  if (!badge) {
+    const staleBadges = card.querySelectorAll(BADGE_SELECTOR);
+    for (const staleBadge of staleBadges) {
+      staleBadge.remove();
+    }
+
+    badge = document.createElement("div");
+    badge.setAttribute(BADGE_ATTR, "1");
+    host.appendChild(badge);
+  }
+
+  host.setAttribute(BADGE_HOST_ATTR, "1");
   badge.dataset.label = modelResult.label;
 
   const mainLine = `Miles: ${formatSignedMilesCompact(modelResult.anomalyMiles)} (${modelResult.label})`;
@@ -253,6 +427,15 @@ function upsertBadge(card, modelResult, cfg) {
 }
 
 function annotateCard(card, cfg, modelApi) {
+  if (removeSponsoredCard(card)) {
+    return;
+  }
+
+  if (isSuggestedCard(card)) {
+    removeCard(card);
+    return;
+  }
+
   if (!isLikelyListingCard(card)) {
     removeBadge(card);
     return;
@@ -312,6 +495,7 @@ async function annotateAllCards(reason) {
 
     ensureStylesInjected();
     const [cfg, modelApi] = await Promise.all([loadConfig(), getModelApi()]);
+    removeAdModules();
     const cards = document.querySelectorAll(CARD_SELECTOR);
 
     for (const card of cards) {
