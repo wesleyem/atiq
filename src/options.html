@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Extension Options</title>
+    <title>DealScore Options</title>
     <style>
       body {
         font-family: Arial, sans-serif;
@@ -85,8 +85,13 @@
     </style>
   </head>
   <body>
-    <h1>Options</h1>
+    <h1>DealScore Options</h1>
     <p>Tune how DealScore is calculated for AutoTrader search cards.</p>
+    <p>
+      <strong>Weight behavior:</strong> KBB and Miles weights are normalized to a ratio
+      before scoring. Relative balance matters more than absolute size
+      (for example, 20:5 behaves like 4:1).
+    </p>
     <form id="options-form">
       <label for="milesPerYear">
         Miles Per Year
@@ -105,18 +110,18 @@
       </label>
 
       <label for="kbbWeight">
-        KBB Weight
+        KBB Weight (relative)
         <input id="kbbWeight" name="kbbWeight" type="number" step="1" />
         <span class="field-help">
-          Weight applied to KBB card badge contribution (Great/Good).
+          Relative contribution from KBB badge signal after weight normalization.
         </span>
       </label>
 
       <label for="milesWeight">
-        Miles Weight
+        Miles Weight (relative)
         <input id="milesWeight" name="milesWeight" type="number" step="1" />
         <span class="field-help">
-          Weight applied to miles-for-year contribution.
+          Relative contribution from miles anomaly after weight normalization.
         </span>
       </label>
 
@@ -168,12 +173,12 @@
           <strong>12000</strong> for stronger mileage influence.
         </li>
         <li>
-          Trust KBB more: increase <strong>KBB Weight</strong> to
-          <strong>15–20</strong> and reduce <strong>Miles Weight</strong>.
+          Trust KBB more: increase <strong>KBB Weight</strong> and reduce
+          <strong>Miles Weight</strong> (for example, <strong>20:5</strong>).
         </li>
         <li>
-          Prioritize mechanical wear: increase <strong>Miles Weight</strong> to
-          <strong>14–18</strong> and reduce <strong>KBB Weight</strong>.
+          Prioritize mechanical wear: increase <strong>Miles Weight</strong> and reduce
+          <strong>KBB Weight</strong> (for example, <strong>5:20</strong>).
         </li>
         <li>
           Color boundaries: raise <strong>Good Deal Threshold</strong> for stricter green
@@ -181,9 +186,15 @@
         </li>
       </ul>
 
-      <p class="preset"><strong>Preset (KBB-first):</strong> kbbWeight 18, milesWeight 6</p>
-      <p class="preset"><strong>Preset (Miles-first):</strong> kbbWeight 8, milesWeight 16</p>
-      <p class="preset"><strong>Preset (Balanced):</strong> kbbWeight 12, milesWeight 10</p>
+      <p class="preset">
+        <strong>Preset (KBB-first ratio):</strong> kbbWeight 20, milesWeight 5
+      </p>
+      <p class="preset">
+        <strong>Preset (Miles-first ratio):</strong> kbbWeight 5, milesWeight 20
+      </p>
+      <p class="preset">
+        <strong>Preset (Balanced ratio):</strong> kbbWeight 12, milesWeight 10
+      </p>
     </section>
 
     <script src="options.js"></script>

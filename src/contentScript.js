@@ -448,6 +448,17 @@ function parseKbbBadge(card) {
   return { label: "—", kbbScore: 0.0, selectorUsed: "" };
 }
 
+function getKbbValue(label) {
+  const normalized = cleanText(label).toLowerCase();
+  if (normalized.includes("great")) {
+    return 1.0;
+  }
+  if (normalized.includes("good")) {
+    return 0.5;
+  }
+  return 0.0;
+}
+
 function normalizeConfig(cfg = {}) {
   const goodDealScore = clamp(
     Math.trunc(toNumber(cfg.goodDealScore, DEFAULT_CONFIG.goodDealScore)),
@@ -460,36 +471,68 @@ function normalizeConfig(cfg = {}) {
     100
   );
 
+  const kbbWeightRaw = Math.max(
+    0,
+    toNumber(cfg.kbbWeightRaw, toNumber(cfg.kbbWeight, DEFAULT_CONFIG.kbbWeight))
+  );
+  const milesWeightRaw = Math.max(
+    0,
+    toNumber(
+      cfg.milesWeightRaw,
+      toNumber(cfg.milesWeight, DEFAULT_CONFIG.milesWeight)
+    )
+  );
+
   return {
     milesPerYear: Math.max(1, Math.trunc(toNumber(cfg.milesPerYear, DEFAULT_CONFIG.milesPerYear))),
     milesScale: Math.max(1, toNumber(cfg.milesScale, DEFAULT_CONFIG.milesScale)),
-    kbbWeight: toNumber(cfg.kbbWeight, DEFAULT_CONFIG.kbbWeight),
-    milesWeight: toNumber(cfg.milesWeight, DEFAULT_CONFIG.milesWeight),
+    kbbWeightRaw,
+    milesWeightRaw,
     goodDealScore,
     poorDealScore,
     debug: Boolean(cfg.debug)
   };
 }
 
-function computeDealScore(listingYear, listingMiles, kbbScore, cfg) {
+function computeDealScore(listing, cfg) {
+  const listingYear = toNumber(listing?.listingYear, NaN);
+  const listingMiles = toNumber(listing?.listingMiles, NaN);
+
+  if (!Number.isFinite(listingYear) || !Number.isFinite(listingMiles)) {
+    return null;
+  }
+
   const currentYear = new Date().getFullYear();
   const ageYears = Math.max(currentYear - listingYear, 0);
   const expectedMiles = Math.max(ageYears * cfg.milesPerYear, cfg.milesPerYear);
   const deltaMiles = listingMiles - expectedMiles;
-  const milesScoreRaw = (-deltaMiles) / cfg.milesScale;
-  const milesScore = clamp(milesScoreRaw, -2, 2);
-  const dealScore = clamp(
-    50 + cfg.kbbWeight * kbbScore + cfg.milesWeight * milesScore,
-    0,
-    100
-  );
+  const kbbValue = toNumber(listing?.kbbValue, getKbbValue(listing?.kbbLabel));
+  const normalizedKbb = (kbbValue - 0.5) * 2;
+  const normalizedMiles = clamp(-deltaMiles / cfg.milesScale, -1, 1);
+
+  const weightSum = cfg.kbbWeightRaw + cfg.milesWeightRaw + 1e-9;
+  const normKbbWeight = cfg.kbbWeightRaw / weightSum;
+  const normMilesWeight = cfg.milesWeightRaw / weightSum;
+
+  const combined =
+    normKbbWeight * normalizedKbb + normMilesWeight * normalizedMiles;
+  const scaled = (combined + 1) / 2;
+  const dealScore = clamp(Math.round(scaled * 100), 0, 100);
 
   return {
+    listingYear,
+    listingMiles,
     ageYears,
     expectedMiles,
     deltaMiles,
-    milesScore,
-    dealScore
+    normalizedKbb,
+    normalizedMiles,
+    normKbbWeight,
+    normMilesWeight,
+    combined,
+    scaled,
+    dealScore,
+    kbbValue
   };
 }
 
@@ -598,7 +641,19 @@ function annotateCard(card, cfg) {
     return;
   }
 
-  const computed = computeDealScore(listingYear, listingMiles, kbbBadge.kbbScore, cfg);
+  const computed = computeDealScore(
+    {
+      listingYear,
+      listingMiles,
+      kbbLabel: kbbBadge.label,
+      kbbValue: kbbBadge.kbbScore
+    },
+    cfg
+  );
+  if (!computed) {
+    removeBadge(card);
+    return;
+  }
   const result = {
     ...computed,
     kbbLabel: kbbBadge.label,
