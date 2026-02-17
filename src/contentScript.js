@@ -1,9 +1,11 @@
-const STYLE_TAG_ID = "mytruck-anomaly-style";
+const STYLE_TAG_ID = "mytruck-dealscore-style";
 const CARD_SELECTOR = "[data-cmp='itemCard']";
 const CARD_BODY_SELECTOR = ".item-card-body";
 const CARD_TITLE_SELECTOR = "h2[data-cmp='subheading']";
 const CARD_LINK_SELECTOR = "a[data-cmp='link']";
 const CARD_SPECS_SELECTOR = "[data-cmp='listingSpecifications']";
+const CARD_PRICE_SELECTOR = "[data-cmp='firstPrice']";
+const CARD_KBB_BADGE_SELECTOR = "[data-cmp='DealBadge']";
 const CARD_MILES_SELECTOR =
   "[data-cmp='listingSpecifications'] li, [data-cmp='listingSpecifications'] span";
 const CONSIDER_NEW_BANNER_SELECTOR = ".text-blue-darker.text-bold";
@@ -21,20 +23,20 @@ const SUGGESTED_CARD_TEXT_MARKERS = [
   "may not match exact trim or color of the vehicle shown"
 ];
 
-const BADGE_ATTR = "data-mytruck-anomaly";
-const BADGE_HOST_ATTR = "data-mytruck-anomaly-host";
+const BADGE_ATTR = "data-mytruck-dealscore";
+const BADGE_HOST_ATTR = "data-mytruck-dealscore-host";
 const BADGE_SELECTOR = `[${BADGE_ATTR}="1"]`;
 
 const RENDER_THROTTLE_MS = 500;
 const DEFAULT_CONFIG = {
   milesPerYear: 12000,
-  anomalyGoodMiles: -15000,
-  anomalyBadMiles: 15000,
+  milesScale: 20000,
+  kbbWeight: 12,
+  milesWeight: 10,
   debug: false
 };
 const WATCHED_KEYS = Object.keys(DEFAULT_CONFIG);
 
-let modelPromise;
 let mutationObserver;
 let throttleTimer = null;
 let renderInFlight = false;
@@ -44,6 +46,15 @@ function cleanText(value) {
   return String(value || "").replace(/\s+/g, " ").trim();
 }
 
+function toNumber(value, fallback) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value));
+}
+
 function parseYear(value) {
   const match = String(value || "").match(/\b(19|20)\d{2}\b/);
   if (!match) {
@@ -51,6 +62,21 @@ function parseYear(value) {
   }
 
   const parsed = Number(match[0]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseCurrency(value) {
+  const normalized = cleanText(value);
+  if (!normalized) {
+    return null;
+  }
+
+  const match = normalized.match(/\$?\s*([0-9][0-9,]*(?:\.\d+)?)/);
+  if (!match) {
+    return null;
+  }
+
+  const parsed = Number(match[1].replace(/,/g, ""));
   return Number.isFinite(parsed) ? parsed : null;
 }
 
@@ -127,6 +153,16 @@ function formatMilesCompact(value) {
   return `${Math.round(abs)}`;
 }
 
+function formatDeltaMilesInK(value) {
+  if (!Number.isFinite(value)) {
+    return "N/A";
+  }
+
+  const inK = Math.round(value / 1000);
+  const sign = inK > 0 ? "+" : "";
+  return `${sign}${inK}k`;
+}
+
 function ensureStylesInjected() {
   if (document.getElementById(STYLE_TAG_ID)) {
     return;
@@ -162,30 +198,20 @@ function ensureStylesInjected() {
   font-weight: 700;
 }
 
+[${BADGE_ATTR}="1"] .mytruck-dealscore-subline {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #374151;
+}
+
 [${BADGE_ATTR}="1"] .mytruck-anomaly-debug {
   display: block;
   margin-top: 2px;
   font-size: 10px;
   font-weight: 500;
   color: #4b5563;
-}
-
-[${BADGE_ATTR}="1"][data-label="LOW"] {
-  border-color: rgba(16, 124, 61, 0.35);
-  background: rgba(236, 253, 245, 0.96);
-  color: #065f46;
-}
-
-[${BADGE_ATTR}="1"][data-label="HIGH"] {
-  border-color: rgba(185, 28, 28, 0.35);
-  background: rgba(254, 242, 242, 0.96);
-  color: #991b1b;
-}
-
-[${BADGE_ATTR}="1"][data-label="NORMAL"] {
-  border-color: rgba(55, 65, 81, 0.28);
-  background: rgba(249, 250, 251, 0.96);
-  color: #1f2937;
 }
 `;
 
@@ -285,14 +311,18 @@ function isLikelyListingCard(card) {
 }
 
 function extractCardData(card) {
-  const titleText = cleanText(card.querySelector(CARD_TITLE_SELECTOR)?.textContent);
+  const titleNode = card.querySelector(CARD_TITLE_SELECTOR);
+  const titleText = cleanText(titleNode?.textContent);
   const listingYear = parseYear(titleText);
+  const yearSelectorUsed = listingYear !== null ? CARD_TITLE_SELECTOR : "";
 
   let listingMiles = null;
+  let milesSelectorUsed = "";
   const mileNodes = card.querySelectorAll(CARD_MILES_SELECTOR);
   for (const node of mileNodes) {
     listingMiles = parseMiles(node.textContent);
     if (listingMiles !== null) {
+      milesSelectorUsed = CARD_MILES_SELECTOR;
       break;
     }
   }
@@ -300,9 +330,29 @@ function extractCardData(card) {
   if (listingMiles === null) {
     const specsText = cleanText(card.querySelector(CARD_SPECS_SELECTOR)?.textContent);
     listingMiles = parseMiles(specsText);
+    if (listingMiles !== null) {
+      milesSelectorUsed = CARD_SPECS_SELECTOR;
+    }
   }
 
-  return { listingYear, listingMiles };
+  const priceText = cleanText(card.querySelector(CARD_PRICE_SELECTOR)?.textContent);
+  const listingPrice = parseCurrency(priceText);
+  const priceSelectorUsed = listingPrice !== null ? CARD_PRICE_SELECTOR : "";
+
+  const kbbBadge = parseKbbBadge(card);
+
+  return {
+    listingYear,
+    listingMiles,
+    listingPrice,
+    kbbBadge,
+    selectors: {
+      year: yearSelectorUsed,
+      miles: milesSelectorUsed,
+      price: priceSelectorUsed,
+      kbb: kbbBadge.selectorUsed || ""
+    }
+  };
 }
 
 function removeBadge(card) {
@@ -363,6 +413,53 @@ function removeSponsoredCard(card) {
   return true;
 }
 
+function parseKbbBadge(card) {
+  const node = card.querySelector(CARD_KBB_BADGE_SELECTOR);
+  const text = cleanText(node?.textContent).toLowerCase();
+
+  if (text.includes("great price")) {
+    return { label: "Great", kbbScore: 1.0, selectorUsed: CARD_KBB_BADGE_SELECTOR };
+  }
+
+  if (text.includes("good price")) {
+    return { label: "Good", kbbScore: 0.5, selectorUsed: CARD_KBB_BADGE_SELECTOR };
+  }
+
+  return { label: "—", kbbScore: 0.0, selectorUsed: "" };
+}
+
+function normalizeConfig(cfg = {}) {
+  return {
+    milesPerYear: Math.max(1, Math.trunc(toNumber(cfg.milesPerYear, DEFAULT_CONFIG.milesPerYear))),
+    milesScale: Math.max(1, toNumber(cfg.milesScale, DEFAULT_CONFIG.milesScale)),
+    kbbWeight: toNumber(cfg.kbbWeight, DEFAULT_CONFIG.kbbWeight),
+    milesWeight: toNumber(cfg.milesWeight, DEFAULT_CONFIG.milesWeight),
+    debug: Boolean(cfg.debug)
+  };
+}
+
+function computeDealScore(listingYear, listingMiles, kbbScore, cfg) {
+  const currentYear = new Date().getFullYear();
+  const ageYears = Math.max(currentYear - listingYear, 0);
+  const expectedMiles = Math.max(ageYears * cfg.milesPerYear, cfg.milesPerYear);
+  const deltaMiles = listingMiles - expectedMiles;
+  const milesScoreRaw = (-deltaMiles) / cfg.milesScale;
+  const milesScore = clamp(milesScoreRaw, -2, 2);
+  const dealScore = clamp(
+    50 + cfg.kbbWeight * kbbScore + cfg.milesWeight * milesScore,
+    0,
+    100
+  );
+
+  return {
+    ageYears,
+    expectedMiles,
+    deltaMiles,
+    milesScore,
+    dealScore
+  };
+}
+
 function getBadgeHost(card) {
   const body = card.querySelector(CARD_BODY_SELECTOR);
   if (body instanceof HTMLElement) {
@@ -414,19 +511,26 @@ function upsertBadge(card, modelResult, cfg) {
   }
 
   host.setAttribute(BADGE_HOST_ATTR, "1");
-  badge.dataset.label = modelResult.label;
-
-  const mainLine = `Miles: ${formatSignedMilesCompact(modelResult.anomalyMiles)} (${modelResult.label})`;
+  const scoreValue = Math.round(modelResult.dealScore);
+  const mainLine = `DealScore: ${scoreValue}`;
+  const kbbLine = `KBB: ${modelResult.kbbLabel}`;
+  const milesLine = `Miles: ${formatDeltaMilesInK(modelResult.deltaMiles)} vs exp`;
   const debugLine = cfg.debug
-    ? `Exp: ${formatMilesCompact(modelResult.expectedMiles)} | Age: ${modelResult.ageYears}y`
+    ? [
+        `Year: ${modelResult.listingYear} | Miles: ${formatMilesCompact(modelResult.listingMiles)} | Exp: ${formatMilesCompact(modelResult.expectedMiles)}`,
+        `Sel y:${modelResult.selectors.year || "—"} m:${modelResult.selectors.miles || "—"} k:${modelResult.selectors.kbb || "—"}`
+      ].join("<br>")
     : "";
 
-  badge.innerHTML = `<span class="mytruck-anomaly-main">${mainLine}</span>${
-    debugLine ? `<span class="mytruck-anomaly-debug">${debugLine}</span>` : ""
-  }`;
+  badge.innerHTML = `
+<span class="mytruck-anomaly-main">${mainLine}</span>
+<span class="mytruck-dealscore-subline">${kbbLine}</span>
+<span class="mytruck-dealscore-subline">${milesLine}</span>
+${debugLine ? `<span class="mytruck-anomaly-debug">${debugLine}</span>` : ""}
+`;
 }
 
-function annotateCard(card, cfg, modelApi) {
+function annotateCard(card, cfg) {
   if (removeSponsoredCard(card)) {
     return;
   }
@@ -441,17 +545,26 @@ function annotateCard(card, cfg, modelApi) {
     return;
   }
 
-  const { listingYear, listingMiles } = extractCardData(card);
+  const {
+    listingYear,
+    listingMiles,
+    kbbBadge,
+    selectors
+  } = extractCardData(card);
+
   if (!Number.isFinite(listingYear) || !Number.isFinite(listingMiles)) {
     removeBadge(card);
     return;
   }
 
-  const result = modelApi.computeMilesAnomaly(listingYear, listingMiles, cfg);
-  if (!result) {
-    removeBadge(card);
-    return;
-  }
+  const computed = computeDealScore(listingYear, listingMiles, kbbBadge.kbbScore, cfg);
+  const result = {
+    ...computed,
+    kbbLabel: kbbBadge.label,
+    listingYear,
+    listingMiles,
+    selectors
+  };
 
   upsertBadge(card, result, cfg);
 }
@@ -466,13 +579,6 @@ function clearAllBadges() {
   for (const host of hosts) {
     host.removeAttribute(BADGE_HOST_ATTR);
   }
-}
-
-async function getModelApi() {
-  if (!modelPromise) {
-    modelPromise = import(chrome.runtime.getURL("anomalyModel.js"));
-  }
-  return modelPromise;
 }
 
 async function loadConfig() {
@@ -494,15 +600,15 @@ async function annotateAllCards(reason) {
     }
 
     ensureStylesInjected();
-    const [cfg, modelApi] = await Promise.all([loadConfig(), getModelApi()]);
+    const cfg = normalizeConfig(await loadConfig());
     removeAdModules();
     const cards = document.querySelectorAll(CARD_SELECTOR);
 
     for (const card of cards) {
-      annotateCard(card, cfg, modelApi);
+      annotateCard(card, cfg);
     }
   } catch (error) {
-    console.error("Miles anomaly annotation failed:", error);
+    console.error("DealScore annotation failed:", error);
   } finally {
     renderInFlight = false;
   }

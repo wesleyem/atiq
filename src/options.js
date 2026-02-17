@@ -1,14 +1,16 @@
 const form = document.getElementById("options-form");
 const statusEl = document.getElementById("status");
 const milesPerYearInput = document.getElementById("milesPerYear");
-const anomalyGoodMilesInput = document.getElementById("anomalyGoodMiles");
-const anomalyBadMilesInput = document.getElementById("anomalyBadMiles");
+const milesScaleInput = document.getElementById("milesScale");
+const kbbWeightInput = document.getElementById("kbbWeight");
+const milesWeightInput = document.getElementById("milesWeight");
 const debugInput = document.getElementById("debug");
 
 const DEFAULT_CONFIG = {
   milesPerYear: 12000,
-  anomalyGoodMiles: -15000,
-  anomalyBadMiles: 15000,
+  milesScale: 20000,
+  kbbWeight: 12,
+  milesWeight: 10,
   debug: false
 };
 
@@ -21,8 +23,9 @@ async function restoreOptions() {
   const stored = await chrome.storage.sync.get(DEFAULT_CONFIG);
 
   milesPerYearInput.value = stored.milesPerYear;
-  anomalyGoodMilesInput.value = stored.anomalyGoodMiles;
-  anomalyBadMilesInput.value = stored.anomalyBadMiles;
+  milesScaleInput.value = stored.milesScale;
+  kbbWeightInput.value = stored.kbbWeight;
+  milesWeightInput.value = stored.milesWeight;
   debugInput.checked = Boolean(stored.debug);
 }
 
@@ -33,11 +36,13 @@ async function saveOptions(event) {
     milesPerYear: Math.trunc(
       numberOrDefault(milesPerYearInput.value, DEFAULT_CONFIG.milesPerYear)
     ),
-    anomalyGoodMiles: Math.trunc(
-      numberOrDefault(anomalyGoodMilesInput.value, DEFAULT_CONFIG.anomalyGoodMiles)
+    milesScale: Math.trunc(
+      numberOrDefault(milesScaleInput.value, DEFAULT_CONFIG.milesScale)
     ),
-    anomalyBadMiles: Math.trunc(
-      numberOrDefault(anomalyBadMilesInput.value, DEFAULT_CONFIG.anomalyBadMiles)
+    kbbWeight: numberOrDefault(kbbWeightInput.value, DEFAULT_CONFIG.kbbWeight),
+    milesWeight: numberOrDefault(
+      milesWeightInput.value,
+      DEFAULT_CONFIG.milesWeight
     ),
     debug: debugInput.checked
   };
