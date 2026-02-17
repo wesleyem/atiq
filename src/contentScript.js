@@ -18,6 +18,9 @@ const FLUID_AD_CONTAINER_SELECTOR = "[data-cmp^='cntnr-fluid-ad']";
 const SPOTLIGHT_AD_SLOT_SELECTOR = "[data-cmp='adSlot'][id*='spotlightAd']";
 const FILTER_INLINE_CAROUSEL_SELECTOR = "[data-cmp='filter-inline-carousel']";
 const FILTER_INLINE_FEATURE_SELECTOR = "[data-cmp='filter-inline-feature']";
+const MY_WALLET_GRID_SELECTOR = "[data-cmp='myWalletGridPlacement']";
+const PREORDER_CONTAINER_SELECTOR = "div.display-flex.fade-in";
+const PREORDER_CARD_SELECTOR = "[data-cmp='preorderCard']";
 const SUGGESTED_CARD_TEXT_MARKERS = [
   "for illustration purposes only",
   "may not match exact trim or color of the vehicle shown"
@@ -35,6 +38,12 @@ const DEFAULT_CONFIG = {
   milesWeight: 10,
   goodDealScore: 70,
   poorDealScore: 40,
+  hideSponsoredCards: true,
+  hideSuggestedCards: true,
+  hideAdModules: true,
+  hideInlineFilterCarousel: true,
+  hideMyWalletCard: true,
+  hidePreorderCards: true,
   debug: false
 };
 const WATCHED_KEYS = Object.keys(DEFAULT_CONFIG);
@@ -490,6 +499,12 @@ function normalizeConfig(cfg = {}) {
     milesWeightRaw,
     goodDealScore,
     poorDealScore,
+    hideSponsoredCards: Boolean(cfg.hideSponsoredCards),
+    hideSuggestedCards: Boolean(cfg.hideSuggestedCards),
+    hideAdModules: Boolean(cfg.hideAdModules),
+    hideInlineFilterCarousel: Boolean(cfg.hideInlineFilterCarousel),
+    hideMyWalletCard: Boolean(cfg.hideMyWalletCard),
+    hidePreorderCards: Boolean(cfg.hidePreorderCards),
     debug: Boolean(cfg.debug)
   };
 }
@@ -545,28 +560,56 @@ function getBadgeHost(card) {
   return card;
 }
 
-function removeAdModules() {
-  const fluidContainers = document.querySelectorAll(FLUID_AD_CONTAINER_SELECTOR);
-  for (const container of fluidContainers) {
-    removeNodeAndCleanup(container);
+function removeAdModules(cfg) {
+  if (cfg.hideAdModules) {
+    const fluidContainers = document.querySelectorAll(FLUID_AD_CONTAINER_SELECTOR);
+    for (const container of fluidContainers) {
+      removeNodeAndCleanup(container);
+    }
+
+    const spotlightAdSlots = document.querySelectorAll(SPOTLIGHT_AD_SLOT_SELECTOR);
+    for (const adSlot of spotlightAdSlots) {
+      const container = adSlot.closest(FLUID_AD_CONTAINER_SELECTOR);
+      removeNodeAndCleanup(container || adSlot);
+    }
   }
 
-  const spotlightAdSlots = document.querySelectorAll(SPOTLIGHT_AD_SLOT_SELECTOR);
-  for (const adSlot of spotlightAdSlots) {
-    const container = adSlot.closest(FLUID_AD_CONTAINER_SELECTOR);
-    removeNodeAndCleanup(container || adSlot);
+  if (cfg.hideInlineFilterCarousel) {
+    const filterCarousels = document.querySelectorAll(FILTER_INLINE_CAROUSEL_SELECTOR);
+    for (const carousel of filterCarousels) {
+      removeNodeAndCleanup(carousel);
+    }
+
+    const inlineFeatures = document.querySelectorAll(FILTER_INLINE_FEATURE_SELECTOR);
+    for (const feature of inlineFeatures) {
+      const carousel = feature.closest(FILTER_INLINE_CAROUSEL_SELECTOR);
+      if (!carousel) {
+        removeNodeAndCleanup(feature);
+      }
+    }
   }
 
-  const filterCarousels = document.querySelectorAll(FILTER_INLINE_CAROUSEL_SELECTOR);
-  for (const carousel of filterCarousels) {
-    removeNodeAndCleanup(carousel);
+  if (cfg.hideMyWalletCard) {
+    const myWalletBlocks = document.querySelectorAll(MY_WALLET_GRID_SELECTOR);
+    for (const block of myWalletBlocks) {
+      removeNodeAndCleanup(block);
+    }
   }
 
-  const inlineFeatures = document.querySelectorAll(FILTER_INLINE_FEATURE_SELECTOR);
-  for (const feature of inlineFeatures) {
-    const carousel = feature.closest(FILTER_INLINE_CAROUSEL_SELECTOR);
-    if (!carousel) {
-      removeNodeAndCleanup(feature);
+  if (cfg.hidePreorderCards) {
+    const preorderContainers = document.querySelectorAll(PREORDER_CONTAINER_SELECTOR);
+    for (const container of preorderContainers) {
+      if (!(container instanceof HTMLElement)) {
+        continue;
+      }
+
+      const hasImmediatePreorderChild = Array.from(container.children).some(
+        (child) => child instanceof Element && child.matches(PREORDER_CARD_SELECTOR)
+      );
+
+      if (hasImmediatePreorderChild) {
+        removeNodeAndCleanup(container);
+      }
     }
   }
 }
@@ -615,11 +658,11 @@ ${debugLine ? `<span class="mytruck-anomaly-debug">${debugLine}</span>` : ""}
 }
 
 function annotateCard(card, cfg) {
-  if (removeSponsoredCard(card)) {
+  if (cfg.hideSponsoredCards && removeSponsoredCard(card)) {
     return;
   }
 
-  if (isSuggestedCard(card)) {
+  if (cfg.hideSuggestedCards && isSuggestedCard(card)) {
     removeCard(card);
     return;
   }
@@ -697,7 +740,7 @@ async function annotateAllCards(reason) {
 
     ensureStylesInjected();
     const cfg = normalizeConfig(await loadConfig());
-    removeAdModules();
+    removeAdModules(cfg);
     const cards = document.querySelectorAll(CARD_SELECTOR);
 
     for (const card of cards) {

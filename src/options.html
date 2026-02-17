@@ -82,6 +82,32 @@
         color: #666;
         font-size: 12px;
       }
+
+      .toggle-group {
+        display: grid;
+        gap: 8px;
+        margin-top: 6px;
+      }
+
+      .toggle-label {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        column-gap: 8px;
+        align-items: start;
+      }
+
+      .toggle-label input[type="checkbox"] {
+        margin-top: 2px;
+      }
+
+      .toggle-copy {
+        display: grid;
+        gap: 2px;
+      }
+
+      .toggle-copy strong {
+        font-size: 14px;
+      }
     </style>
   </head>
   <body>
@@ -140,6 +166,74 @@
           DealScore at or below this value is treated as a poor deal (red).
         </span>
       </label>
+
+      <h2>Hidden Card Toggles</h2>
+      <div class="toggle-group">
+        <label class="toggle-label" for="hideSponsoredCards">
+          <input id="hideSponsoredCards" name="hideSponsoredCards" type="checkbox" />
+          <span class="toggle-copy">
+            <strong>Hide Sponsored Cards</strong>
+            <span class="field-help">
+              Removes spotlight/sponsored listing cards from results.
+            </span>
+          </span>
+        </label>
+
+        <label class="toggle-label" for="hideSuggestedCards">
+          <input id="hideSuggestedCards" name="hideSuggestedCards" type="checkbox" />
+          <span class="toggle-copy">
+            <strong>Hide Suggested/Illustration Cards</strong>
+            <span class="field-help">
+              Removes cards marked as illustration/suggested vehicles.
+            </span>
+          </span>
+        </label>
+
+        <label class="toggle-label" for="hideAdModules">
+          <input id="hideAdModules" name="hideAdModules" type="checkbox" />
+          <span class="toggle-copy">
+            <strong>Hide Ad Modules</strong>
+            <span class="field-help">
+              Removes inline ad blocks (for example spotlight ad placements).
+            </span>
+          </span>
+        </label>
+
+        <label class="toggle-label" for="hideInlineFilterCarousel">
+          <input
+            id="hideInlineFilterCarousel"
+            name="hideInlineFilterCarousel"
+            type="checkbox"
+          />
+          <span class="toggle-copy">
+            <strong>Hide Inline Filter Carousel</strong>
+            <span class="field-help">
+              Removes feature-question carousel cards inserted in results.
+            </span>
+          </span>
+        </label>
+
+        <label class="toggle-label" for="hideMyWalletCard">
+          <input id="hideMyWalletCard" name="hideMyWalletCard" type="checkbox" />
+          <span class="toggle-copy">
+            <strong>Hide My Wallet Placement</strong>
+            <span class="field-help">
+              Removes modules using <code>data-cmp="myWalletGridPlacement"</code>.
+            </span>
+          </span>
+        </label>
+
+        <label class="toggle-label" for="hidePreorderCards">
+          <input id="hidePreorderCards" name="hidePreorderCards" type="checkbox" />
+          <span class="toggle-copy">
+            <strong>Hide Preorder Cards</strong>
+            <span class="field-help">
+              Removes <code>div.display-flex.fade-in</code> blocks with an immediate
+              <code>data-cmp="preorderCard"</code> child.
+            </span>
+          </span>
+        </label>
+      </div>
 
       <label for="debug">
         <input id="debug" name="debug" type="checkbox" />

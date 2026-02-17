@@ -6,6 +6,14 @@ const kbbWeightInput = document.getElementById("kbbWeight");
 const milesWeightInput = document.getElementById("milesWeight");
 const goodDealScoreInput = document.getElementById("goodDealScore");
 const poorDealScoreInput = document.getElementById("poorDealScore");
+const hideSponsoredCardsInput = document.getElementById("hideSponsoredCards");
+const hideSuggestedCardsInput = document.getElementById("hideSuggestedCards");
+const hideAdModulesInput = document.getElementById("hideAdModules");
+const hideInlineFilterCarouselInput = document.getElementById(
+  "hideInlineFilterCarousel"
+);
+const hideMyWalletCardInput = document.getElementById("hideMyWalletCard");
+const hidePreorderCardsInput = document.getElementById("hidePreorderCards");
 const debugInput = document.getElementById("debug");
 
 const DEFAULT_CONFIG = {
@@ -15,6 +23,12 @@ const DEFAULT_CONFIG = {
   milesWeight: 10,
   goodDealScore: 70,
   poorDealScore: 40,
+  hideSponsoredCards: true,
+  hideSuggestedCards: true,
+  hideAdModules: true,
+  hideInlineFilterCarousel: true,
+  hideMyWalletCard: true,
+  hidePreorderCards: true,
   debug: false
 };
 
@@ -32,6 +46,12 @@ async function restoreOptions() {
   milesWeightInput.value = stored.milesWeight;
   goodDealScoreInput.value = stored.goodDealScore;
   poorDealScoreInput.value = stored.poorDealScore;
+  hideSponsoredCardsInput.checked = Boolean(stored.hideSponsoredCards);
+  hideSuggestedCardsInput.checked = Boolean(stored.hideSuggestedCards);
+  hideAdModulesInput.checked = Boolean(stored.hideAdModules);
+  hideInlineFilterCarouselInput.checked = Boolean(stored.hideInlineFilterCarousel);
+  hideMyWalletCardInput.checked = Boolean(stored.hideMyWalletCard);
+  hidePreorderCardsInput.checked = Boolean(stored.hidePreorderCards);
   debugInput.checked = Boolean(stored.debug);
 }
 
@@ -56,6 +76,12 @@ async function saveOptions(event) {
     poorDealScore: Math.trunc(
       numberOrDefault(poorDealScoreInput.value, DEFAULT_CONFIG.poorDealScore)
     ),
+    hideSponsoredCards: hideSponsoredCardsInput.checked,
+    hideSuggestedCards: hideSuggestedCardsInput.checked,
+    hideAdModules: hideAdModulesInput.checked,
+    hideInlineFilterCarousel: hideInlineFilterCarouselInput.checked,
+    hideMyWalletCard: hideMyWalletCardInput.checked,
+    hidePreorderCards: hidePreorderCardsInput.checked,
     debug: debugInput.checked
   };
 
