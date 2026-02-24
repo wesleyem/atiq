@@ -74,6 +74,25 @@ All settings are stored in the extension `storage.sync` area.
    - Click **Load Temporary Add-on...**.
    - Select `src/manifest.json`.
 
+## Build (Local ZIPs)
+
+Run:
+
+```bash
+npm run build
+```
+
+This creates:
+
+- `dist/chromium-extension-v<manifest-version>.zip`
+- `dist/firefox-extension-v<manifest-version>.zip`
+
+To override the tag in filenames:
+
+```bash
+npm run build -- v1.3.1
+```
+
 ## Usage
 
 1. Open AutoTrader search results (`https://www.autotrader.com/cars-for-sale/...`).
@@ -89,6 +108,8 @@ All settings are stored in the extension `storage.sync` area.
 - `src/contentScript.js` - extraction, scoring, overlays, removals, observers
 - `src/options.html` / `src/options.js` - config UI + persistence
 - `src/popup.html` / `src/popup.js` - quick entry to options page
+- `package.json` - local/CI automation scripts
+- `scripts/build-extensions.sh` - local ZIP build script
 - `.github/workflows/release-extension.yml` - release workflow and ZIP packaging
 
 ## Release Workflow
