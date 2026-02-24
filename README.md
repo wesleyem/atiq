@@ -121,6 +121,21 @@ On pushes to `main` (or manual dispatch), GitHub Actions runs `release-please` a
 
 Then uploads both ZIPs to the GitHub Release.
 
+## Firefox Store Release Workflow
+
+The workflow `.github/workflows/release-firefox.yml` submits the add-on to Firefox Add-ons (AMO):
+
+- Automatically on GitHub Release `published`
+- Manually via **Run workflow** (`workflow_dispatch`) with optional `ref` and `channel` (`listed` or `unlisted`)
+
+Required repository secrets:
+
+- `AMO_ADDON_ID` - AMO add-on ID (slug, numeric ID, or GUID/UUID)
+- `AMO_JWT_ISSUER` - AMO API key
+- `AMO_JWT_SECRET` - AMO API secret
+
+The workflow builds from `src/` and submits the generated Firefox ZIP with `browser-actions/release-firefox-addon@latest`.
+
 ## Limitations
 
 - DOM-only approach; no network/API scraping.
