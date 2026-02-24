@@ -643,19 +643,37 @@ function upsertBadge(card, modelResult, cfg) {
   const mainLine = `DealScore: ${scoreValue}`;
   const kbbLine = `KBB: ${modelResult.kbbLabel}`;
   const milesLine = `Miles: ${formatDeltaMilesInK(modelResult.deltaMiles)} vs exp`;
-  const debugLine = cfg.debug
-    ? [
-        `Year: ${modelResult.listingYear} | Miles: ${formatMilesCompact(modelResult.listingMiles)} | Exp: ${formatMilesCompact(modelResult.expectedMiles)}`,
-        `Sel y:${modelResult.selectors.year || "—"} m:${modelResult.selectors.miles || "—"} k:${modelResult.selectors.kbb || "—"}`
-      ].join("<br>")
-    : "";
+  const mainLineEl = document.createElement("span");
+  mainLineEl.className = "mytruck-anomaly-main";
+  mainLineEl.textContent = mainLine;
 
-  badge.innerHTML = `
-<span class="mytruck-anomaly-main">${mainLine}</span>
-<span class="mytruck-dealscore-subline">${kbbLine}</span>
-<span class="mytruck-dealscore-subline">${milesLine}</span>
-${debugLine ? `<span class="mytruck-anomaly-debug">${debugLine}</span>` : ""}
-`;
+  const kbbLineEl = document.createElement("span");
+  kbbLineEl.className = "mytruck-dealscore-subline";
+  kbbLineEl.textContent = kbbLine;
+
+  const milesLineEl = document.createElement("span");
+  milesLineEl.className = "mytruck-dealscore-subline";
+  milesLineEl.textContent = milesLine;
+
+  badge.replaceChildren(mainLineEl, kbbLineEl, milesLineEl);
+
+  if (cfg.debug) {
+    const debugLines = [
+      `Year: ${modelResult.listingYear} | Miles: ${formatMilesCompact(modelResult.listingMiles)} | Exp: ${formatMilesCompact(modelResult.expectedMiles)}`,
+      `Sel y:${modelResult.selectors.year || "—"} m:${modelResult.selectors.miles || "—"} k:${modelResult.selectors.kbb || "—"}`
+    ];
+    const debugLineEl = document.createElement("span");
+    debugLineEl.className = "mytruck-anomaly-debug";
+
+    for (let i = 0; i < debugLines.length; i += 1) {
+      if (i > 0) {
+        debugLineEl.appendChild(document.createElement("br"));
+      }
+      debugLineEl.append(debugLines[i]);
+    }
+
+    badge.appendChild(debugLineEl);
+  }
 }
 
 function annotateCard(card, cfg) {
