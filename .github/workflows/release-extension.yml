@@ -26,22 +26,17 @@ jobs:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - name: Package extensions
+      - name: Setup Node
+        if: ${{ steps.release.outputs.release_created }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build extension archives
         if: ${{ steps.release.outputs.release_created }}
         run: |
           set -euo pipefail
-
-          TAG_NAME="${{ steps.release.outputs.tag_name }}"
-
-          rm -rf dist
-          mkdir -p dist/chromium dist/firefox
-          cp -R src/. dist/chromium/
-          cp -R src/. dist/firefox/
-
-          cd dist/chromium
-          zip -r -9 "../chromium-extension-${TAG_NAME}.zip" .
-          cd ../firefox
-          zip -r -9 "../firefox-extension-${TAG_NAME}.zip" .
+          npm run build -- "${{ steps.release.outputs.tag_name }}"
 
       - name: Upload release artifacts
         if: ${{ steps.release.outputs.release_created }}

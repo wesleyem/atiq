@@ -1,0 +1,11 @@
+{
+  "name": "autotrader-dealscore-overlay-automation",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Automation scripts for building and releasing the AutoTrader DealScore browser extension.",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "bash ./scripts/build-extensions.sh"
+  }
+}
