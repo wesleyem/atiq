@@ -1,0 +1,89 @@
+name: Release Firefox Add-on
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to release (tag, branch, or SHA)"
+        required: false
+        default: "main"
+      channel:
+        description: "Firefox Add-on channel"
+        required: true
+        type: choice
+        default: listed
+        options:
+          - listed
+          - unlisted
+
+permissions:
+  contents: read
+
+jobs:
+  submit-to-amo:
+    runs-on: ubuntu-latest
+
+    env:
+      AMO_ADDON_ID: ${{ secrets.AMO_ADDON_ID }}
+      AMO_JWT_ISSUER: ${{ secrets.AMO_JWT_ISSUER }}
+      AMO_JWT_SECRET: ${{ secrets.AMO_JWT_SECRET }}
+
+    steps:
+      - name: Validate required secrets
+        run: |
+          set -euo pipefail
+          if [[ -z "${AMO_ADDON_ID}" ]]; then
+            echo "Missing repository secret: AMO_ADDON_ID"
+            exit 1
+          fi
+          if [[ -z "${AMO_JWT_ISSUER}" ]]; then
+            echo "Missing repository secret: AMO_JWT_ISSUER"
+            exit 1
+          fi
+          if [[ -z "${AMO_JWT_SECRET}" ]]; then
+            echo "Missing repository secret: AMO_JWT_SECRET"
+            exit 1
+          fi
+
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build extension archives
+        run: npm run build
+
+      - name: Resolve Firefox package path
+        id: package
+        run: |
+          set -euo pipefail
+          addon_path="$(ls -1 dist/firefox-extension-*.zip | head -n 1)"
+          if [[ -z "${addon_path}" ]]; then
+            echo "No firefox package found under dist/."
+            exit 1
+          fi
+          echo "addon_path=${addon_path}" >> "${GITHUB_OUTPUT}"
+
+      - name: Submit add-on to AMO
+        id: publish
+        uses: browser-actions/release-firefox-addon@latest
+        with:
+          addon-id: ${{ secrets.AMO_ADDON_ID }}
+          addon-path: ${{ steps.package.outputs.addon_path }}
+          channel: ${{ github.event_name == 'workflow_dispatch' && inputs.channel || 'listed' }}
+          auth-api-issuer: ${{ secrets.AMO_JWT_ISSUER }}
+          auth-api-secret: ${{ secrets.AMO_JWT_SECRET }}
+
+      - name: Show AMO submission details
+        run: |
+          echo "AMO version: ${{ steps.publish.outputs.version }}"
+          echo "AMO version ID: ${{ steps.publish.outputs['version-id'] }}"
+          echo "AMO edit URL: ${{ steps.publish.outputs['version-edit-url'] }}"
