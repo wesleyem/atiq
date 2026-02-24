@@ -1,8 +1,9 @@
 const openOptionsButton = document.getElementById("open-options");
+const extensionApi = globalThis.browser ?? globalThis.chrome;
 
 if (openOptionsButton) {
   openOptionsButton.addEventListener("click", () => {
-    chrome.runtime.openOptionsPage();
+    extensionApi.runtime.openOptionsPage();
   });
 }
 

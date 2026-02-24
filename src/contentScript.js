@@ -47,6 +47,7 @@ const DEFAULT_CONFIG = {
   debug: false
 };
 const WATCHED_KEYS = Object.keys(DEFAULT_CONFIG);
+const extensionApi = globalThis.browser ?? globalThis.chrome;
 
 let mutationObserver;
 let throttleTimer = null;
@@ -721,7 +722,7 @@ function clearAllBadges() {
 }
 
 async function loadConfig() {
-  return chrome.storage.sync.get(DEFAULT_CONFIG);
+  return extensionApi.storage.sync.get(DEFAULT_CONFIG);
 }
 
 async function annotateAllCards(reason) {
@@ -817,7 +818,7 @@ function attachMutationObserver() {
 }
 
 function attachStorageListener() {
-  chrome.storage.onChanged.addListener((changes, areaName) => {
+  extensionApi.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== "sync") {
       return;
     }

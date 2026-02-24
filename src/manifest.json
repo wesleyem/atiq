@@ -3,6 +3,11 @@
   "name": "AutoTrader DealScore Overlay",
   "description": "Annotates AutoTrader listings with DealScore based on KBB badge and miles anomaly.",
   "version": "1.2.0",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "autotrader-dealscore-overlay@atiq.local"
+    }
+  },
   "permissions": [
     "storage"
   ],
