@@ -15,6 +15,7 @@ const hideInlineFilterCarouselInput = document.getElementById(
 const hideMyWalletCardInput = document.getElementById("hideMyWalletCard");
 const hidePreorderCardsInput = document.getElementById("hidePreorderCards");
 const debugInput = document.getElementById("debug");
+const extensionApi = globalThis.browser ?? globalThis.chrome;
 
 const DEFAULT_CONFIG = {
   milesPerYear: 12000,
@@ -38,7 +39,7 @@ function numberOrDefault(value, fallback) {
 }
 
 async function restoreOptions() {
-  const stored = await chrome.storage.sync.get(DEFAULT_CONFIG);
+  const stored = await extensionApi.storage.sync.get(DEFAULT_CONFIG);
 
   milesPerYearInput.value = stored.milesPerYear;
   milesScaleInput.value = stored.milesScale;
@@ -85,7 +86,7 @@ async function saveOptions(event) {
     debug: debugInput.checked
   };
 
-  await chrome.storage.sync.set(payload);
+  await extensionApi.storage.sync.set(payload);
   statusEl.textContent = "Saved.";
   window.setTimeout(() => {
     statusEl.textContent = "";

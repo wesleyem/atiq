@@ -1,6 +1,6 @@
 # AutoTrader DealScore Overlay
 
-Chromium MV3 extension that annotates AutoTrader search result cards with a computed **DealScore** and optionally removes non-target UI cards/modules.
+Browser extension (Chromium + Firefox) that annotates AutoTrader search result cards with a computed **DealScore** and optionally removes non-target UI cards/modules.
 
 ## What It Does
 
@@ -37,7 +37,7 @@ Final score:
 
 ## Options
 
-All settings are stored in `chrome.storage.sync`.
+All settings are stored in the extension `storage.sync` area.
 
 ### Scoring Parameters
 
@@ -65,10 +65,14 @@ All settings are stored in `chrome.storage.sync`.
 ## Installation (Local / Unpacked)
 
 1. Clone this repo.
-2. Open Chromium/Chrome and go to `chrome://extensions`.
-3. Enable **Developer mode**.
-4. Click **Load unpacked**.
-5. Select the `src/` directory.
+2. For Chromium/Chrome:
+   - Open `chrome://extensions`.
+   - Enable **Developer mode**.
+   - Click **Load unpacked** and select `src/`.
+3. For Firefox:
+   - Open `about:debugging#/runtime/this-firefox`.
+   - Click **Load Temporary Add-on...**.
+   - Select `src/manifest.json`.
 
 ## Usage
 
@@ -92,8 +96,9 @@ All settings are stored in `chrome.storage.sync`.
 On pushes to `main` (or manual dispatch), GitHub Actions runs `release-please` and, when a release is created, packages `src/` into:
 
 - `dist/chromium-extension-<tag>.zip`
+- `dist/firefox-extension-<tag>.zip`
 
-Then uploads that ZIP to the GitHub Release.
+Then uploads both ZIPs to the GitHub Release.
 
 ## Limitations
 

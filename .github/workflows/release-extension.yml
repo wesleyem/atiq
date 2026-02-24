@@ -1,4 +1,4 @@
-name: Release Chromium Extension
+name: Release Browser Extension
 
 on:
   push:
@@ -26,7 +26,7 @@ jobs:
           config-file: .release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      - name: Package extension
+      - name: Package extensions
         if: ${{ steps.release.outputs.release_created }}
         run: |
           set -euo pipefail
@@ -34,15 +34,19 @@ jobs:
           TAG_NAME="${{ steps.release.outputs.tag_name }}"
 
           rm -rf dist
-          mkdir -p dist/unpacked
-          cp -R src/. dist/unpacked/
+          mkdir -p dist/chromium dist/firefox
+          cp -R src/. dist/chromium/
+          cp -R src/. dist/firefox/
 
-          cd dist/unpacked
+          cd dist/chromium
           zip -r -9 "../chromium-extension-${TAG_NAME}.zip" .
+          cd ../firefox
+          zip -r -9 "../firefox-extension-${TAG_NAME}.zip" .
 
-      - name: Upload release artifact
+      - name: Upload release artifacts
         if: ${{ steps.release.outputs.release_created }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh release upload "${{ steps.release.outputs.tag_name }}" "dist/chromium-extension-${{ steps.release.outputs.tag_name }}.zip" --clobber
+          gh release upload "${{ steps.release.outputs.tag_name }}" "dist/firefox-extension-${{ steps.release.outputs.tag_name }}.zip" --clobber
