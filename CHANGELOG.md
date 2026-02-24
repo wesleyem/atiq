@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.1](https://github.com/wesleyem/atiq/compare/v1.3.0...v1.3.1) (2026-02-24)
+
+
+### Bug Fixes
+
+* **firefox:** satisfy AMO validation and ignore dist output ([#13](https://github.com/wesleyem/atiq/issues/13)) ([a49a35c](https://github.com/wesleyem/atiq/commit/a49a35cba1c5c1451e6c9ba7e1487f31115208ac))
+
 ## [1.3.0](https://github.com/wesleyem/atiq/compare/v1.2.0...v1.3.0) (2026-02-24)
 
 
