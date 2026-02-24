@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/wesleyem/atiq/compare/v1.2.0...v1.3.0) (2026-02-24)
+
+
+### Features
+
+* **extension:** add Firefox compatibility and release artifact ([#11](https://github.com/wesleyem/atiq/issues/11)) ([1750113](https://github.com/wesleyem/atiq/commit/175011357a36ea2e7ea92ac147d41ca099cc8f97))
+
 ## [1.2.0](https://github.com/wesleyem/atiq/compare/v1.1.0...v1.2.0) (2026-02-17)
 
 
